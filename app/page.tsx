@@ -9,6 +9,7 @@ import { useRef, useState, useEffect, useMemo } from 'react'
 // 引入组件
 import { BlackHole } from '@/components/BlackHole'
 import { ShadowAvatar } from '@/components/ShadowAvatar'
+import { GalaxyVortexLoader } from '@/components/GalaxyVortexLoader'
 
 const photos = ['/p1.jpg', '/p2.jpg', '/p3.jpg', '/p4.jpg', '/p5.jpg', '/p6.jpg']
 
@@ -450,6 +451,7 @@ function MemoryRing({ children, isActive }) {
 }
 
 export default function Home() {
+  const [loading, setLoading] = useState(true);
   const [activePhoto, setActivePhoto] = useState<{ url: string; name: string } | null>(null)
   const mode = activePhoto ? 'focus' : 'gallery'
 
@@ -459,6 +461,10 @@ export default function Home() {
         setActivePhoto({ url, name })
     }
   }
+
+  const handleLoadingComplete = () => {
+    setLoading(false);
+  };
 
   // 【修复2】背景层：添加角度倾斜和呼吸动画
   const BackgroundLayer = () => {
@@ -495,6 +501,10 @@ export default function Home() {
           : null 
       
       return <ShadowAvatar targetPosition={targetPos} />
+  }
+
+  if (loading) {
+    return <GalaxyVortexLoader onLoaded={handleLoadingComplete} />;
   }
 
   return (
