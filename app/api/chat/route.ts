@@ -5,6 +5,8 @@ import OpenAI from "openai";
 import fs from 'fs';
 import path from 'path';
 
+type ChatHistoryMessage = { role: 'user' | 'assistant'; content: string };
+
 // 打印 Key 状态 (用于启动时调试)
 const apiKey = process.env.DOUBAO_API_KEY || '';
 const endpoint = process.env.DOUBAO_ENDPOINT_ID || '';
@@ -18,7 +20,7 @@ const client = new OpenAI({
 
 export async function POST(req: Request) {
   try {
-    const { text, photoUrl, history } = await req.json(); // <-- 接收完整的历史记录
+    const { text = '', photoUrl, history = [] } = await req.json() as { text?: string; photoUrl: string; history?: ChatHistoryMessage[] }; // <-- 接收完整的历史记录
     console.log(`📨 收到前端请求... (共 ${history.length + 1} 条记录)`);
 
     // 1. 找图片并转 Base64
@@ -32,7 +34,7 @@ export async function POST(req: Request) {
     const base64Image = `data:image/jpeg;base64,${imageBuffer.toString('base64')}`;
 
     // 2. 构建完整的消息队列
-    const messages = [
+    const messages: any[] = [
         {
             // 系统身份设定，放在最前面
             role: "system",

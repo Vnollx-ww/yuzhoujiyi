@@ -1,16 +1,25 @@
 'use client'
 
 import { Canvas, useFrame, useLoader, useThree } from '@react-three/fiber'
+import type { ThreeEvent } from '@react-three/fiber'
 import { Stars, OrbitControls, Float } from '@react-three/drei'
 import { EffectComposer, Bloom, Noise, Vignette } from '@react-three/postprocessing'
 import * as THREE from 'three'
 import { useRef, useState, useEffect, useMemo } from 'react'
+import type { ReactNode } from 'react'
 
 // 引入组件
 import { BlackHole } from '@/components/BlackHole'
 import { ShadowAvatar } from '@/components/ShadowAvatar'
 
 const photos = ['/p1.jpg', '/p2.jpg', '/p3.jpg', '/p4.jpg', '/p5.jpg', '/p6.jpg']
+
+type VoiceStatus = 'idle' | 'listening' | 'processing' | 'speaking'
+type ChatRole = 'user' | 'assistant'
+type ChatMessage = { role: ChatRole; content: string }
+type PhotoData = { url: string; name: string }
+type SceneMode = 'gallery' | 'focus'
+type VectorTuple = [number, number, number]
 
 // ===== 全局音量 =====
 let globalAudioVolume = 0.0
@@ -45,7 +54,7 @@ const initAudio = async () => {
 }
 
 // ================= UI 组件 =================
-function AudioWaveformHUD({ status, onStart }) {
+function AudioWaveformHUD({ status, onStart }: { status: VoiceStatus; onStart: () => void | Promise<void> }) {
   return (
     <div 
       onClick={status === 'idle' ? onStart : undefined}
@@ -76,12 +85,12 @@ function AudioWaveformHUD({ status, onStart }) {
   )
 }
 
-function VoiceOverlay({ activePhoto, onClose }) {
-  const [status, setStatus] = useState('idle')
+function VoiceOverlay({ activePhoto, onClose }: { activePhoto: PhotoData | null; onClose: () => void }) {
+  const [status, setStatus] = useState<VoiceStatus>('idle')
   const [aiText, setAiText] = useState('')
-  const [chatHistory, setChatHistory] = useState([])
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([])
   
-  const callRealAI = async (text, role = 'user') => {
+  const callRealAI = async (text: string, role: ChatRole = 'user') => {
     if (!activePhoto) return
     const newMsg = { role, content: text }
     const newHistory = [...chatHistory, newMsg]
@@ -93,9 +102,10 @@ function VoiceOverlay({ activePhoto, onClose }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, photoUrl: activePhoto.url, history: newHistory }),
       })
-      const data = await res.json()
-      setAiText(data.reply)
-      setChatHistory([...newHistory, { role: 'assistant', content: data.reply }])
+      const data = await res.json() as { reply?: string }
+      const reply = data.reply || ''
+      setAiText(reply)
+      setChatHistory([...newHistory, { role: 'assistant', content: reply }])
       setStatus('speaking')
       setTimeout(() => setStatus('idle'), 4000)
     } catch (e) {
@@ -184,7 +194,7 @@ function VoiceOverlay({ activePhoto, onClose }) {
     </div>
   )
 } 
-function UploadInterface({ setActivePhoto }) {
+function UploadInterface({ setActivePhoto }: { setActivePhoto: (photo: PhotoData) => void }) {
   const handleUploadClick = () => {
     const newPhotoUrl = '/p1.jpg'; 
     setActivePhoto({ url: newPhotoUrl, name: 'uploaded' });
@@ -323,9 +333,17 @@ const fragmentShader = `
 // ================= 3D 组件 (CinematicPhoto) =================
 // 找到 CinematicPhoto 组件，完整替换为：
 // ================= 3D 组件 (CinematicPhoto - 旋转修复版) =================
-function CinematicPhoto({ url, position, rotation, onClick, isActive, mode }) {
+function CinematicPhoto({ url, position, rotation, onClick, isActive, mode }: {
+  name?: string
+  url: string
+  position: VectorTuple
+  rotation: VectorTuple
+  onClick: (event: ThreeEvent<MouseEvent>) => void
+  isActive: boolean
+  mode: SceneMode
+}) {
   const texture = useLoader(THREE.TextureLoader, url)
-  const materialRef = useRef<any>()
+  const materialRef = useRef<THREE.ShaderMaterial>(null)
   const groupRef = useRef<THREE.Group>(null)
   
   const isFocusMode = mode === 'focus'
@@ -416,7 +434,7 @@ function CinematicPhoto({ url, position, rotation, onClick, isActive, mode }) {
 }
 
 // ================= 相机复位器 =================
-function CameraManager({ mode }) {
+function CameraManager({ mode }: { mode: SceneMode }) {
     const { camera, controls } = useThree()
     
     useFrame((state, delta) => {
@@ -435,8 +453,8 @@ function CameraManager({ mode }) {
 }
 
 // ================= 场景管理器 =================
-function MemoryRing({ children, isActive }) {
-  const groupRef = useRef(null)
+function MemoryRing({ children, isActive }: { children: ReactNode; isActive: boolean }) {
+  const groupRef = useRef<THREE.Group>(null)
   
   useFrame((state, delta) => {
     // 只有在"非专注"模式下才旋转
@@ -453,7 +471,7 @@ export default function Home() {
   const [activePhoto, setActivePhoto] = useState<{ url: string; name: string } | null>(null)
   const mode = activePhoto ? 'focus' : 'gallery'
 
-  const handlePhotoClick = (e, url, name) => {
+  const handlePhotoClick = (e: ThreeEvent<MouseEvent>, url: string, name: string) => {
     e.stopPropagation()
     if (mode === 'gallery') {
         setActivePhoto({ url, name })
@@ -483,7 +501,7 @@ export default function Home() {
       return (
           <group ref={group}>
               <BlackHole />
-              <Stars radius={100} count={4000} factor={4} fade speed={0.3} opacity={0.5} />
+              <Stars radius={100} count={4000} factor={4} fade speed={0.3} />
           </group>
       )
   }
@@ -550,7 +568,7 @@ export default function Home() {
 
         <AvatarLayer />
 
-        <EffectComposer disableNormalPass>
+        <EffectComposer enableNormalPass={false}>
           <Bloom luminanceThreshold={0.7} mipmapBlur intensity={0.6} radius={0.4} />
           <Noise opacity={0.1} />
           <Vignette eskil={false} offset={0.1} darkness={1.2} />
