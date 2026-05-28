@@ -2,6 +2,7 @@
 
 import { NextResponse } from 'next/server';
 import OpenAI from "openai";
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import fs from 'fs';
 import path from 'path';
 
@@ -11,15 +12,33 @@ const endpoint = process.env.DOUBAO_ENDPOINT_ID || '';
 console.log('🔑 API Key 状态:', apiKey ? `已读取 (开头: ${apiKey.substring(0, 5)}...)` : '❌ 未读取到！请检查 .env.local');
 console.log('🔌 接入点 ID:', endpoint ? `已读取 (${endpoint})` : '❌ 未读取到！');
 
-const client = new OpenAI({
-  apiKey: process.env.DOUBAO_API_KEY,
-  baseURL: "https://ark.cn-beijing.volces.com/api/v3",
-});
+type ChatHistoryMessage = {
+  role: "system" | "user" | "assistant";
+  content: string;
+};
+
+type ChatRequestBody = {
+  text?: string;
+  photoUrl?: string;
+  history?: ChatHistoryMessage[];
+};
 
 export async function POST(req: Request) {
   try {
-    const { text, photoUrl, history } = await req.json(); // <-- 接收完整的历史记录
+    const { text = '', photoUrl = '', history = [] } = await req.json() as ChatRequestBody; // <-- 接收完整的历史记录
     console.log(`📨 收到前端请求... (共 ${history.length + 1} 条记录)`);
+
+    const runtimeApiKey = process.env.DOUBAO_API_KEY;
+    const runtimeEndpoint = process.env.DOUBAO_ENDPOINT_ID;
+
+    if (!runtimeApiKey || !runtimeEndpoint) {
+      return NextResponse.json({ reply: "系统故障：缺少 API Key 或 Endpoint ID。" }, { status: 500 });
+    }
+
+    const client = new OpenAI({
+      apiKey: runtimeApiKey,
+      baseURL: "https://ark.cn-beijing.volces.com/api/v3",
+    });
 
     // 1. 找图片并转 Base64
     const safeUrl = photoUrl.startsWith('/') ? photoUrl.slice(1) : photoUrl;
@@ -32,7 +51,7 @@ export async function POST(req: Request) {
     const base64Image = `data:image/jpeg;base64,${imageBuffer.toString('base64')}`;
 
     // 2. 构建完整的消息队列
-    const messages = [
+    const messages: ChatCompletionMessageParam[] = [
         {
             // 系统身份设定，放在最前面
             role: "system",
@@ -42,7 +61,7 @@ export async function POST(req: Request) {
 
     // 3. 注入历史记录
     // 过滤掉前端 UI 用的“系统指令”，只注入真正的对话内容
-    history.forEach(msg => {
+    history.forEach((msg) => {
         if (!msg.content.includes("系统指令：")) {
             messages.push({ role: msg.role, content: msg.content });
         }
@@ -63,8 +82,8 @@ export async function POST(req: Request) {
 
     // 5. 呼叫豆包
     const completion = await client.chat.completions.create({
-      messages: messages as any, // 传入完整历史
-      model: process.env.DOUBAO_ENDPOINT_ID as string,
+      messages, // 传入完整历史
+      model: runtimeEndpoint,
       max_tokens: 500,
     });
 

@@ -1,570 +1,541 @@
 'use client'
 
-import { Canvas, useFrame, useLoader, useThree } from '@react-three/fiber'
-import { Stars, OrbitControls, Float } from '@react-three/drei'
-import { EffectComposer, Bloom, Noise, Vignette } from '@react-three/postprocessing'
+import { Canvas, useFrame, useThree, useLoader } from '@react-three/fiber'
+import { OrbitControls, Grid, Html } from '@react-three/drei'
+import { EffectComposer, Noise } from '@react-three/postprocessing'
 import * as THREE from 'three'
-import { useRef, useState, useEffect, useMemo } from 'react'
+import React, { useRef, useState, useEffect, useMemo, Suspense } from 'react'
 
-// 引入组件
-import { BlackHole } from '@/components/BlackHole'
-import { ShadowAvatar } from '@/components/ShadowAvatar'
+// ================= 🌍 核心叙事数据 =================
 
-const photos = ['/p1.jpg', '/p2.jpg', '/p3.jpg', '/p4.jpg', '/p5.jpg', '/p6.jpg']
-
-// ===== 全局音量 =====
-let globalAudioVolume = 0.0
-let audioContext: AudioContext | null = null
-
-const initAudio = async () => {
-  if (audioContext && audioContext.state === 'running') return true
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
-    audioContext = new AudioCtx()
-    const analyser = audioContext.createAnalyser()
-    analyser.fftSize = 512
-    const source = audioContext.createMediaStreamSource(stream)
-    source.connect(analyser)
-    const dataArray = new Uint8Array(analyser.frequencyBinCount)
-    const updateVolume = () => {
-      analyser.getByteFrequencyData(dataArray)
-      let sum = 0
-      for (let i = 0; i < dataArray.length; i++) sum += dataArray[i]
-      const avg = sum / dataArray.length
-      const targetVolume = Math.min(avg / 70.0, 1.2)
-      globalAudioVolume += (targetVolume - globalAudioVolume) * 0.2
-      requestAnimationFrame(updateVolume)
-    }
-    updateVolume()
-    return true
-  } catch (e: any) {
-    console.error("Mic Error:", e)
-    return false
+const SITE_CONFIG = {
+  zh: {
+    mainTitle: '美好家园',
+    subTitle: '在地童境计划',
+    langBtn: 'EN',
+    backBtn: '← 退出沉浸',
+    clickHint: '点击触碰记忆，转译空间',
+    cardLabels: { pastMemory: '乡村记忆', childBehavior: '儿童行为', spatialTranslation: '空间转译', interaction: '互动体验' }
+  },
+  en: {
+    mainTitle: 'A Better Home',
+    subTitle: 'Local Childhood Landscape',
+    langBtn: '中',
+    backBtn: '← Exit',
+    clickHint: 'Click to translate space',
+    cardLabels: { pastMemory: 'Past Memory', childBehavior: 'Behavior', spatialTranslation: 'Translation', interaction: 'Interaction' }
   }
 }
 
-// ================= UI 组件 =================
-function AudioWaveformHUD({ status, onStart }) {
-  return (
-    <div 
-      onClick={status === 'idle' ? onStart : undefined}
-      style={{
-        cursor: status === 'idle' ? 'pointer' : 'default',
-        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px',
-        opacity: status === 'speaking' ? 0.5 : 1, transition: 'all 0.5s'
-      }}
-    >
-      <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px', letterSpacing: '2px', textTransform: 'uppercase' }}>
-        {status === 'idle' && "点击开启对话"}
-        {status === 'listening' && "正在聆听..."}
-        {status === 'processing' && "意识上传中..."}
-        {status === 'speaking' && "AI 回应中"}
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', height: '40px' }}>
-        {status === 'idle' && <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'white', animation: 'breath 2s infinite ease-in-out', boxShadow: '0 0 10px rgba(255,255,255,0.5)' }} />}
-        {status === 'listening' && [1,2,3,4,5].map(i => <div key={i} style={{ width: '4px', height: '20px', background: '#fff', borderRadius: '2px', animation: `wave 0.8s infinite ease-in-out ${i * 0.1}s` }} />)}
-        {status === 'processing' && <div style={{ width: '24px', height: '24px', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />}
-        {status === 'speaking' && <div style={{ width: '30px', height: '2px', background: '#00ccff', borderRadius: '1px', boxShadow: '0 0 15px #00ccff' }} />}
-      </div>
-      <style>{`
-        @keyframes breath { 0% { transform: scale(1); opacity: 0.5; } 50% { transform: scale(1.2); opacity: 1; } 100% { transform: scale(1); opacity: 0.5; } }
-        @keyframes wave { 0% { height: 5px; opacity: 0.5; } 50% { height: 30px; opacity: 1; } 100% { height: 5px; opacity: 0.5; } }
-        @keyframes spin { to { transform: rotate(360deg); } }
-      `}</style>
-    </div>
-  )
-}
+const NODES_DATA = [
+  { slug: "walk-by-river", entry: "沿着河边慢慢走", keywords: "蛙鸣 · 水边 · 停留", formalName: "亲水步台", pastMemory: "过去村落河边捉迷藏与观察蝌蚪的湿地经验，是孩子们天然的生态课堂。", childBehavior: "亲水、安全戏水、自然观察、结伴停留。", spatialTranslation: "设计安全的缓坡亲水阶梯栈道与低尺度网格防护，将自然水体引入社区。", interaction: "触碰NFC触发潺潺流溪声与水纹漫反射光影。" },
+  { slug: "tree-entrance", entry: "村口那棵树还在吗", keywords: "蝉鸣 · 聚集 · 纳凉", formalName: "树下议场", pastMemory: "大樟树是传统村落的社交核心，孩子们在巨大的树根间穿梭，听长辈讲古。", childBehavior: "非正式聚集、自发性游戏、登高眺望、倾听叙事。", spatialTranslation: "围绕乔木构建层叠、起伏的木质看台，创造情感连接的“议场”。", interaction: "触碰节点触发微风吹过树叶的沙沙声。" },
+  { slug: "path-behind-door", entry: "门后还有一条小路", keywords: "探索 · 穿行 · 隐秘", formalName: "穿行门", pastMemory: "江南传统村落错综复杂的窄巷与老木门，是探险与捉迷藏的天然迷宫。", childBehavior: "转角探索、捉迷藏、空间连续奔跑、感知光影。", spatialTranslation: "设计错落的微型几何圆孔穿行门洞群，重构街巷探索感。", interaction: "穿过门洞点亮线性投影光轨并伴随脚步声。" },
+  { slug: "only-we-know", entry: "只有我们知道", keywords: "雨声 · 躲藏 · 秘密", formalName: "秘密小屋", pastMemory: "村落中的秘密角落、自建小屋、堆放柴火的隐秘处，是专属的藏身空间。", childBehavior: "躲藏、停留、结伴、观察、私密倾诉。", spatialTranslation: "转化为社区中可进入、可停留、低天花板尺度的包裹式微空间。", interaction: "儿童触碰触发雨声、低声耳语或模拟的心跳声。" },
+  { slug: "stars-blink", entry: "听说星星会眨眼", keywords: "虫鸣 · 攀爬 · 远眺", formalName: "望星塔", pastMemory: "夏夜登高寻找北斗星的记忆，是乡村生活中关于垂直空间与星空的最初感知。", childBehavior: "攀爬、登高俯瞰、星空观测、空间发现。", spatialTranslation: "构建带有螺旋攀爬结构的轻量化塔形装置，设立垂直节点。", interaction: "登顶触碰点亮顶部微光，伴随夜间虫鸣。" },
+  { slug: "wind-turning", entry: "抬头听见风在转", keywords: "鸟鸣 · 律动 · 交换", formalName: "风巢标", pastMemory: "田间随风转动的风车与晾晒的谷物，带给孩子最直观的时间与季节感。", childBehavior: "动态观察、物物交换、风速感知、装置互动。", spatialTranslation: "设计带有动力感应装置的社区导视标志，将风能转化为律动。", interaction: "风车旋转时触发风铃声，可进行“物物交换”。" },
+  { slug: "beyond-wall", entry: "听见墙那边", keywords: "回声 · 倾听 · 回应", formalName: "回声井", pastMemory: "对着古井喊话、听墙那头的呼唤，声音的反射是乡村空间最奇妙的互动。", childBehavior: "发声、倾听、回声对话、角色扮演。", spatialTranslation: "设计带有声学反射弧面的微型半包裹墙体，创造自然回声收集器。", interaction: "通过传导装置，实现跨节点的实时声音对讲。" },
+  { slug: "my-yard", entry: "我家的院子", keywords: "篱笆 · 进出 ·家园", formalName: "院墙", pastMemory: "院子是家园的延伸，是篱笆、菜地、禽鸣与邻里隔墙打招呼的温情场域。", childBehavior: "穿行进出、驻足交谈、邻里窥探、家庭游戏。", spatialTranslation: "提取传统院墙的透空度与尺度，构建半透光的低矮景墙系统。", interaction: "走近区域触发家禽低鸣与炊烟的温暖氛围音。" },
+  { slug: "fish-scale", entry: "鱼鳞石上摆一摆", keywords: "江水 · 协作 · 摆放", formalName: "鱼鳞石台", pastMemory: "钱塘江边的鱼鳞石塘是天然的摆放台，孩子们在石头缝隙里寻找贝壳。", childBehavior: "摆放协作、自然物收集、手工创作、社交互助。", spatialTranslation: "复刻鱼鳞石的高低差，设计互动台面，鼓励自发的手工与交换。", interaction: "点击台面触发江水拍岸声与波光视觉效果。" }
+];
 
-function VoiceOverlay({ activePhoto, onClose }) {
-  const [status, setStatus] = useState('idle')
-  const [aiText, setAiText] = useState('')
-  const [chatHistory, setChatHistory] = useState([])
-  
-  const callRealAI = async (text, role = 'user') => {
-    if (!activePhoto) return
-    const newMsg = { role, content: text }
-    const newHistory = [...chatHistory, newMsg]
-    setChatHistory(newHistory)
-    setStatus('processing')
-    try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, photoUrl: activePhoto.url, history: newHistory }),
-      })
-      const data = await res.json()
-      setAiText(data.reply)
-      setChatHistory([...newHistory, { role: 'assistant', content: data.reply }])
-      setStatus('speaking')
-      setTimeout(() => setStatus('idle'), 4000)
-    } catch (e) {
-      setAiText('连接中断...')
-      setStatus('idle')
-    }
-  }
-
-  // ... 在 VoiceOverlay 组件内部 ...
-
-  const startListening = async () => {
-    // 1. 初始化音频权限
-    const isAudioReady = await initAudio()
-    if (!isAudioReady) return
-
-    // 2. 检查浏览器支持
-    // @ts-ignore
-    const Recognition = window.webkitSpeechRecognition || window.SpeechRecognition
-    if (!Recognition) {
-      alert('您的浏览器不支持语音对话，请使用 Chrome。')
-      return
-    }
-
-    const rec = new Recognition()
-    rec.lang = 'zh-CN'
-    rec.continuous = false // 关键：设为 false，说完一句自动停
-    rec.interimResults = false // 关键：不返回临时结果，只返回最终结果
-
-    // 3. 开启监听状态
-    setStatus('listening')
-
-    // --- [核心修复] 收到结果后的逻辑 ---
-    rec.onresult = (e: any) => {
-      const transcript = e.results[0][0].transcript
-      
-      if (transcript && transcript.trim().length > 0) {
-          console.log("听到了:", transcript)
-          
-          // A. 强制停止录音机
-          rec.stop()
-          
-          // B. 强制切换 UI 状态为“思考中”
-          setStatus('processing') 
-          
-          // C. 发送给 AI
-          callRealAI(transcript, 'user')
-      }
-    }
-
-    // 4. 错误处理
-    rec.onerror = (e: any) => {
-      console.error("语音识别错误:", e)
-      // 如果是没听清(no-speech)，重置为待机
-      setStatus('idle')
-    }
-
-    // 5. 结束处理
-    rec.onend = () => {
-      // 如果录音机停了，但状态还在 'listening' (说明没听到有效的话)，则重置回 idle
-      // 如果状态已经是 'processing' (说明在 onresult 里已经切换了)，则保持不变
-      setStatus((prev) => (prev === 'listening' ? 'idle' : prev))
-    }
-
-    rec.start()
-  }
-
-  if (!activePhoto) return null
-
-  return (
-    <div style={{ position: 'absolute', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 10, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center', paddingBottom: '60px', pointerEvents: 'none' }}>
-      
-      <button onClick={onClose} style={{ position: 'absolute', top: '40px', right: '40px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', color: 'white', padding: '10px 24px', borderRadius: '30px', cursor: 'pointer', pointerEvents: 'auto', backdropFilter: 'blur(10px)', fontSize:'14px', letterSpacing:'1px' }}>
-        ← 返回记忆星环
-      </button>
-      
-      <div style={{ marginBottom: '40px', textAlign: 'center', minHeight: '80px', pointerEvents: 'auto', padding: '0 30px', maxWidth: '600px', transform: 'translateX(250px)' }}>
-        {aiText && (
-          <div style={{ color: '#fff', fontSize: '18px', lineHeight: '1.6', textShadow: '0 0 10px rgba(0,0,0,0.8)', background: 'rgba(0,0,0,0.6)', padding: '20px 30px', borderRadius: '16px', backdropFilter:'blur(10px)', border:'1px solid rgba(255,255,255,0.1)' }}>
-            {aiText}
-          </div>
-        )}
-      </div>
-      <div style={{ pointerEvents: 'auto', transform: 'translateX(250px)' }}>
-        <AudioWaveformHUD status={status} onStart={startListening} />
-      </div>
-    </div>
-  )
-} 
-function UploadInterface({ setActivePhoto }) {
-  const handleUploadClick = () => {
-    const newPhotoUrl = '/p1.jpg'; 
-    setActivePhoto({ url: newPhotoUrl, name: 'uploaded' });
-  };
-  return (
-    <div style={{ position: 'absolute', top: '40px', left: '50%', transform: 'translateX(-50%)', zIndex: 5, pointerEvents: 'auto' }}>
-      <button onClick={handleUploadClick} style={{ padding: '10px 24px', borderRadius: '30px', background: 'rgba(0, 0, 0, 0.3)', color: 'rgba(255, 255, 255, 0.9)', border: '1px solid rgba(255, 255, 255, 0.3)', backdropFilter: 'blur(10px)', cursor: 'pointer', display: 'flex', gap: '8px', animation: 'subtleGlow 3s infinite alternate ease-in-out' }}>
-        <span style={{ fontSize: '16px', fontWeight: 'bold' }}>+</span> 上传新的记忆
-      </button>
-      <style>{`@keyframes subtleGlow { 0% { box-shadow: 0 0 5px rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.3); } 100% { box-shadow: 0 0 15px rgba(255,255,255,0.4); border-color: rgba(255,255,255,0.6); } }`}</style>
-    </div>
-  );
-}
-// ================= SHADERS =================
-// 找到原来的 vertexShader，完整替换为下面这段代码
-// 找到 vertexShader 变量，完全替换为：
-const vertexShader = `
-  uniform sampler2D uTexture;
-  uniform float uTime;
-  uniform float uVolume; 
-  uniform float uIsActive; 
-  uniform float uIsFocused; // <--- 新增：是否处于专注模式 (0.0 或 1.0)
-
-  varying vec2 vUv;
-  varying float vBrightness;
-  varying float vDissolve;
-
-  float random(vec2 st) { return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123); }
-  float noise(vec2 st) {
-      vec2 i = floor(st); vec2 f = fract(st);
-      float a = random(i); float b = random(i + vec2(1.0, 0.0));
-      float c = random(i + vec2(0.0, 1.0)); float d = random(i + vec2(1.0, 1.0));
-      vec2 u = f * f * (3.0 - 2.0 * f);
-      return mix(a, b, u.x) + (c - a)* u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
-  }
-
-  void main() {
-    vUv = uv;
-    vec4 color = texture2D(uTexture, uv);
-    float brightness = (color.r + color.g + color.b) / 3.0;
-    vBrightness = brightness;
-
-    vec3 pos = position;
-    
-    // 基础呼吸
-    float breath = sin(uTime * 1.5 + uv.x * 5.0) * 0.05; 
-    
-    // [优化] 专注模式下，减弱 Z 轴隆起，防止人脸变形
-    float depthStrength = mix(2.5, 1.2, uIsFocused); 
-    pos.z += brightness * depthStrength + breath;
-
-    // 计算一个缓慢的漂浮噪波
-float driftScale = 1.5;
-float driftTime = uTime * 0.2;
-float driftX = noise(vec2(pos.y * driftScale + driftTime, pos.z * driftScale)) * 0.5;
-float driftY = noise(vec2(pos.x * driftScale - driftTime, pos.z * driftScale)) * 0.5;
-
-// 核心控制：只有在非专注模式下 (1.0 - uIsFocused) 才应用这个漂浮
-float floatFactor = (1.0 - uIsFocused) * (0.5 + brightness * 0.5);
-pos.x += driftX * floatFactor;
-pos.y += driftY * floatFactor;
-
-    vDissolve = 0.0;
-
-    // 声音响应
-    if (uIsActive > 0.5 && uVolume > 0.06) {
-        float distFromCenter = distance(uv, vec2(0.5));
-        float edgeMask = smoothstep(0.05, 0.7, distFromCenter); 
-        
-        pos.z += uVolume * 1.5 * brightness;
-
-        vec3 flowDir = vec3(
-            noise(uv * 4.0 + uTime * 0.5) - 0.5, 
-            noise(uv * 4.0 + uTime * 0.5 + 10.0) * 0.8 + 0.3, 
-            noise(uv * 4.0 + uTime * 0.5 + 20.0) * 0.3
-        );
-        
-        float cycle = fract(uTime * 0.3 + random(uv) * 5.0);
-        float moveDist = cycle * (uVolume * 0.4) * (0.5 + edgeMask * 2.0) * (0.8 + brightness);
-        
-        pos += flowDir * moveDist;
-        vDissolve = moveDist;
-        
-        float sizeFactor = mix(1.0, (1.0 - cycle * 0.5), edgeMask);
-        gl_PointSize = (4.5 * brightness + 1.5) * sizeFactor * (30.0 / -modelViewMatrix[3].z);
-    } else {
-        // [核心优化] 专注模式下，粒子变小(0.6倍)，显得更细腻
-        float fineTune = mix(1.0, 2.0, uIsFocused); 
-        gl_PointSize = (4.0 * brightness + 2.0) * fineTune * (30.0 / -modelViewMatrix[3].z); 
-    }
-
-    vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-    gl_Position = projectionMatrix * mvPosition;
-  }
-`
-
-// 找到原来的 fragmentShader，完整替换为下面这段代码
-const fragmentShader = `
-  uniform sampler2D uTexture;
-  uniform float uSaturation;
-
-  varying vec2 vUv;
-  varying float vBrightness;
-  varying float vDissolve;
-  varying vec3 vWorldPos;
-
-  void main() {
-    vec4 color = texture2D(uTexture, vUv);
-
-    // 剔除太暗的粒子，让背景更干净
-    if (vBrightness < 0.05) discard;
-
-    // --- 核心改动：柔焦光晕质感 ---
-    // 计算像素到点中心的距离 (0.0 到 0.5)
-    vec2 coord = gl_PointCoord - vec2(0.5);
-    float dist = length(coord);
-
-    // 1. 创建柔和的光晕 alpha (中心为1，边缘为0)
-    // 使用 smoothstep 和 pow 创造一个非线性的、类似高斯的光晕衰减
-    float glowAlpha = smoothstep(0.5, 0.0, dist); // 基础柔边
-    glowAlpha = pow(glowAlpha, 2.5); // 让衰减更陡峭，中心更亮，边缘更柔
-
-    // 2. 颜色处理 (保持不变)
-    float gray = dot(color.rgb, vec3(0.299, 0.587, 0.114));
-    vec3 finalColor = mix(vec3(gray), color.rgb, uSaturation);
-    
-    // 3. 最终合成：提高整体亮度，让光晕叠加产生过曝感
-    // 如果有溶解效果，降低 alpha
-    float finalAlpha = glowAlpha * (1.0 - vDissolve);
-    
-    // * 2.5 提高亮度，制造发光感
-    gl_FragColor = vec4(finalColor * 0.5, finalAlpha);
-  }
-`
-
-// ================= 3D 组件 (CinematicPhoto) =================
-// 找到 CinematicPhoto 组件，完整替换为：
-// ================= 3D 组件 (CinematicPhoto - 旋转修复版) =================
-function CinematicPhoto({ url, position, rotation, onClick, isActive, mode }) {
-  const texture = useLoader(THREE.TextureLoader, url)
-  const materialRef = useRef<any>()
-  const groupRef = useRef<THREE.Group>(null)
-  
-  const isFocusMode = mode === 'focus'
-  const isTarget = isActive
-  // 没选中的时候显示，选中时如果是自己也显示
-  const isVisible = isFocusMode ? isTarget : true
-
-  const uniforms = useMemo(() => ({
-      uTexture: { value: texture },
-      uTime: { value: 0 },
-      uSaturation: { value: 0.7 }, 
-      uVolume: { value: 0.0 }, 
-      uIsActive: { value: 0.0 },
-      uIsFocused: { value: 0.0 },
-  }), [texture])
-
-  useFrame((state, delta) => {
-    // 1. 更新 Shader Uniforms
-    if (materialRef.current) {
-      materialRef.current.uniforms.uTime.value = state.clock.getElapsedTime()
-      const audioActive = isFocusMode && isTarget
-      materialRef.current.uniforms.uVolume.value = audioActive ? globalAudioVolume : 0.0
-      materialRef.current.uniforms.uIsActive.value = audioActive ? 1.0 : 0.0
-      materialRef.current.uniforms.uIsFocused.value = THREE.MathUtils.lerp(materialRef.current.uniforms.uIsFocused.value, (isFocusMode && isTarget) ? 1.0 : 0.0, 0.1)
-    }
-
-    if (!groupRef.current) return
-
-    // 2. 位置与动画逻辑
-    if (isFocusMode && isTarget) {
-        // --- 专注模式：飞到屏幕左侧 ---
-        
-        // A. 定义目标世界坐标 (屏幕左侧 -4, 正对 Z=28)
-        const targetWorldPos = new THREE.Vector3(-3, 0, 28)
-        
-        // B. 【关键】将世界坐标转换为父容器内的局部坐标
-        // 这样无论父容器(MemoryRing)转到哪里，照片都会准确飞到镜头前的这个点
-        if (groupRef.current.parent) {
-            groupRef.current.parent.worldToLocal(targetWorldPos)
-        }
-
-        // C. 移动位置
-        groupRef.current.position.lerp(targetWorldPos, 3 * delta)
-        
-        // D. 旋转：始终面向摄像机 (解决旋转导致的朝向错误)
-        // 先看摄像机
-        groupRef.current.lookAt(state.camera.position)
-        // 再微调一点角度 (修正透视)
-        groupRef.current.rotateY(0.15) 
-
-        // E. 缩放
-        const s = THREE.MathUtils.lerp(groupRef.current.scale.x, 0.7, 3 * delta)
-        groupRef.current.scale.set(s, s, s)
-
-    } else {
-        // --- 浏览模式：回到圆环 ---
-        const originalPos = new THREE.Vector3(...position)
-        const originalRot = new THREE.Euler(...rotation)
-
-        groupRef.current.position.lerp(originalPos, 3 * delta)
-        // 恢复原始旋转
-        groupRef.current.rotation.x = THREE.MathUtils.lerp(groupRef.current.rotation.x, originalRot.x, 3 * delta)
-        groupRef.current.rotation.y = THREE.MathUtils.lerp(groupRef.current.rotation.y, originalRot.y, 3 * delta)
-        groupRef.current.rotation.z = THREE.MathUtils.lerp(groupRef.current.rotation.z, originalRot.z, 3 * delta)
-        
-        const s = THREE.MathUtils.lerp(groupRef.current.scale.x, 1.0, 3 * delta)
-        groupRef.current.scale.set(s, s, s)
-    }
+const GENERATE_LOCALIZED_DATA = () => {
+  return NODES_DATA.map((item, idx) => {
+    const angle = (idx / NODES_DATA.length) * Math.PI * 2
+    const radius = 13 + (idx % 3) * 1.5 
+    const y = 1.0 + (idx % 2) * 1.0
+    return { ...item, idx, pos: [Math.cos(angle) * radius, y, Math.sin(angle) * radius] as [number, number, number] }
   })
+}
 
+// ================= 🏛️ 3D 核心景觀主場域 =================
+
+function GlobalFogEnv() {
   return (
-    <group ref={groupRef} onClick={onClick} visible={isVisible}>
-        <points>
-          <planeGeometry args={[4, 5, 220, 220]} /> 
-          <shaderMaterial 
-            ref={materialRef} 
-            vertexShader={vertexShader} 
-            fragmentShader={fragmentShader} 
-            uniforms={uniforms} 
-            transparent 
-            depthWrite={false} 
-            blending={THREE.NormalBlending} 
-          />
-        </points>
-        <mesh visible={false}><planeGeometry args={[4, 5]} /><meshBasicMaterial transparent opacity={0} /></mesh>
+    <group> 
+      <color attach="background" args={['#F5F8FA']} />
+      <fog attach="fog" args={['#F5F8FA', 10, 45]} />
+      <ambientLight intensity={1.5} color="#EEF4F8" />
+      <directionalLight position={[10, 20, 15]} intensity={0.5} color="#FFFFFF" castShadow />
+      <Grid infiniteGrid fadeDistance={45} sectionColor="#6FA8C9" sectionSize={2} cellColor="#EEF4F8" cellSize={0.5} sectionThickness={1.2} cellThickness={0.6} />
     </group>
   )
 }
 
-// ================= 相机复位器 =================
-function CameraManager({ mode }) {
-    const { camera, controls } = useThree()
-    
-    useFrame((state, delta) => {
-        const orbit = controls as any
-        if (!orbit) return
-        const targetCamPos = new THREE.Vector3(0, 0, 35)
-        if (mode === 'focus') {
-            camera.position.lerp(targetCamPos, 2 * delta)
-            orbit.target.lerp(new THREE.Vector3(0, 0, 0), 2 * delta)
-            orbit.enableRotate = false 
-        } else {
-            orbit.enableRotate = true
-        }
-    })
-    return null
+const CORE_COMMUNITIES = ["柏联社区", "象山社区", "狮子社区", "贤家庄社区", "龙心社区", "龙王沙社区"]
+
+function CommunityParticleTextCore({ isFocusMode }: { isFocusMode: boolean }) {
+  const pointsRef = useRef<THREE.Points>(null)
+  const textGroupRef = useRef<THREE.Group>(null)
+
+  const [geo] = useMemo(() => {
+    const count = 1500
+    const arr = new Float32Array(count * 3)
+    for(let i=0; i<count; i++) {
+      const angle = Math.random() * Math.PI * 2
+      const radius = Math.random() * 4
+      arr[i*3] = Math.cos(angle) * radius
+      arr[i*3+1] = (Math.random() - 0.5) * 4
+      arr[i*3+2] = Math.sin(angle) * radius
+    }
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.BufferAttribute(arr, 3))
+    return [g]
+  }, [])
+
+  useFrame((state) => {
+    const time = state.clock.getElapsedTime()
+    if (pointsRef.current) {
+      pointsRef.current.rotation.y = time * 0.05
+      const positions = pointsRef.current.geometry.attributes.position.array as Float32Array
+      for (let i = 0; i < positions.length; i += 3) {
+        positions[i + 1] += Math.sin(time + positions[i] * 0.5) * 0.002
+      }
+      pointsRef.current.geometry.attributes.position.needsUpdate = true
+    }
+    if (textGroupRef.current) textGroupRef.current.position.y = 1.5 + Math.sin(time * 0.6) * 0.3
+  })
+
+  return (
+    <group position={[0, 0, 0]}>
+      <points ref={pointsRef} geometry={geo} position={[0, 1.5, 0]} visible={!isFocusMode}>
+        <pointsMaterial size={0.12} color="#A6C2D6" transparent opacity={0.4} sizeAttenuation depthWrite={false} blending={THREE.AdditiveBlending} />
+      </points>
+      <group ref={textGroupRef}>
+        {!isFocusMode && CORE_COMMUNITIES.map((name, index) => {
+          const col = index % 3
+          const row = Math.floor(index / 3)
+          return (
+            <Html key={name} center position={[(col - 1) * 2.8, (0.5 - row) * 1.0, 0]} style={{ pointerEvents: 'none' }}>
+              <div style={{ color: "#5F7F99", fontSize: '15px', fontWeight: 400, letterSpacing: '4px', whiteSpace: 'nowrap', textShadow: '0 0 10px rgba(255,255,255,0.8)', animation: `particleDissolve 8s infinite ease-in-out ${index * 0.5}s` }}>
+                {name}
+              </div>
+            </Html>
+          )
+        })}
+      </group>
+    </group>
+  )
 }
 
-// ================= 场景管理器 =================
-function MemoryRing({ children, isActive }) {
-  const groupRef = useRef(null)
+const PHOTO_URLS = [
+  'https://jonas-1387333607.cos.ap-shanghai.myqcloud.com/photo1.png',
+  'https://jonas-1387333607.cos.ap-shanghai.myqcloud.com/photo2.png',
+  'https://jonas-1387333607.cos.ap-shanghai.myqcloud.com/photo3.png',
+  'https://jonas-1387333607.cos.ap-shanghai.myqcloud.com/photo4.png',
+  'https://jonas-1387333607.cos.ap-shanghai.myqcloud.com/photo5.png',
+  'https://jonas-1387333607.cos.ap-shanghai.myqcloud.com/photo6.png',
+]
+
+function MemoryPhotoRing({ isFocusMode }: { isFocusMode: boolean }) {
+  const groupRef = useRef<THREE.Group>(null)
+  const textures = useLoader(THREE.TextureLoader, PHOTO_URLS, undefined, () => console.warn('Photo skip'))
   
+  const photoMeshes = useMemo(() => {
+    const meshes = []
+    for (let i = 0; i < 6; i++) {
+      const angle = (i / 6) * Math.PI * 2
+      meshes.push({ position: [Math.cos(angle) * 6.5, 0, Math.sin(angle) * 6.5], rotation: [0, -angle + Math.PI / 2, 0] })
+    }
+    return meshes
+  }, [])
+
   useFrame((state, delta) => {
-    // 只有在"非专注"模式下才旋转
-    if (groupRef.current && !isActive) {
-      // ▼▼▼ 调节这里的 0.001 来改变旋转速度 ▼▼▼
-      groupRef.current.rotation.y += 0.001
+    if (groupRef.current) {
+      groupRef.current.position.y = 1.8 + Math.sin(state.clock.getElapsedTime() * 0.5) * 0.2
+      if (!isFocusMode) groupRef.current.rotation.y += delta * 0.04 
     }
   })
 
-  return <group ref={groupRef}>{children}</group>
+  return (
+    <group ref={groupRef} visible={!isFocusMode}>
+      {photoMeshes.map((m, i) => (
+        <mesh key={i} position={m.position as any} rotation={m.rotation as any}>
+          <planeGeometry args={[2.2, 1.4]} />
+          {textures[i] ? <meshBasicMaterial map={textures[i]} transparent opacity={0.65} side={THREE.DoubleSide} /> : <meshBasicMaterial color="#A6C2D6" transparent opacity={0.3} side={THREE.DoubleSide} />}
+        </mesh>
+      ))}
+    </group>
+  )
 }
 
-export default function Home() {
-  const [activePhoto, setActivePhoto] = useState<{ url: string; name: string } | null>(null)
-  const mode = activePhoto ? 'focus' : 'gallery'
+function MemoryNode({ data, isActive, isFocusMode, onSelect }: any) {
+  const [hovered, setHover] = useState(false)
+  const groupRef = useRef<THREE.Group>(null)
+  const isVisible = isFocusMode ? isActive : true
 
-  const handlePhotoClick = (e, url, name) => {
-    e.stopPropagation()
-    if (mode === 'gallery') {
-        setActivePhoto({ url, name })
+  useFrame((state) => {
+    if (groupRef.current) {
+      const time = state.clock.getElapsedTime()
+      groupRef.current.position.y = data.pos[1] + Math.sin(time + data.pos[0]) * 0.15
+      const s = (hovered || isActive) ? 1.15 : 1.0
+      groupRef.current.scale.lerp(new THREE.Vector3(s, s, s), 0.1)
     }
-  }
+  })
 
-  // 【修复2】背景层：添加角度倾斜和呼吸动画
-  const BackgroundLayer = () => {
-      const group = useRef<THREE.Group>(null)
-      useFrame((state, delta) => {
-          if (!group.current) return
-          const time = state.clock.getElapsedTime()
-
-          // 目标位置 X
-          const targetX = mode === 'focus' ? 12 : 0
-          // 目标位置 Z，加入缓慢的呼吸波动 (范围在 -10 到 -8.5 之间)
-          const targetZ = mode === 'focus' ? -5 + Math.sin(time * 0.5) * 1.5 : 0
-          
-          // 目标旋转 X：专注模式下稍微倾斜 0.2 弧度，避免看起来像一条线
-          const targetRotX = mode === 'focus' ? 0.2 : 0
-          
-          // 平滑过渡
-          group.current.position.x = THREE.MathUtils.lerp(group.current.position.x, targetX, 2 * delta)
-          group.current.position.z = THREE.MathUtils.lerp(group.current.position.z, targetZ, 2 * delta)
-          group.current.rotation.x = THREE.MathUtils.lerp(group.current.rotation.x, targetRotX, 2 * delta)
-      })
-      return (
-          <group ref={group}>
-              <BlackHole />
-              <Stars radius={100} count={4000} factor={4} fade speed={0.3} opacity={0.5} />
-          </group>
-      )
-  }
-
-  // 宇航员
-  const AvatarLayer = () => {
-      const targetPos = mode === 'focus' 
-          ? new THREE.Vector3(-7.5, -4, 28) 
-          : null 
-      
-      return <ShadowAvatar targetPosition={targetPos} />
-  }
+  const pinColor = (hovered || isActive) ? "#6FA8C9" : "#A6C2D6"
 
   return (
-    <div style={{ width: '100vw', height: '100vh', background: '#000', position: 'relative' }}>
-      
-      <VoiceOverlay activePhoto={activePhoto} onClose={() => setActivePhoto(null)} />
-      {!activePhoto && <UploadInterface setActivePhoto={(data) => setActivePhoto({ url: data.url, name: 'uploaded' })} />}
-
-      <Canvas camera={{ position: [0, 0, 35], fov: 50 }} gl={{ toneMapping: THREE.ACESFilmicToneMapping }}>
-        <color attach="background" args={['#010101']} />
-        <fog attach="fog" args={['#010101', 10, 80]} />
+    <group visible={isVisible}>
+      <group 
+        ref={groupRef} position={data.pos} onClick={onSelect}
+        onPointerOver={() => { setHover(true); document.body.style.cursor = 'pointer' }}
+        onPointerOut={() => { setHover(false); document.body.style.cursor = 'auto' }}
+      >
+        {!isFocusMode && (
+          <Html position={[0, 0.8, 0]} center style={{ pointerEvents: 'none', userSelect: 'none' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+              <div style={{ color: '#6FA8C9', fontSize: '12px', opacity: hovered ? 1 : 0, transform: `translateY(${hovered ? '0px' : '10px'})`, transition: 'all 0.5s', whiteSpace: 'nowrap', fontWeight: 300, letterSpacing: '1px' }}>
+                {data.keywords}
+              </div>
+              <div style={{ color: hovered ? '#334155' : '#8DA5B7', fontSize: '14px', letterSpacing: '1px', transition: 'all 0.4s', whiteSpace: 'nowrap' }}>
+                {data.entry}
+              </div>
+            </div>
+          </Html>
+        )}
+        <mesh visible={false}><sphereGeometry args={[1.5, 16, 16]} /><meshBasicMaterial /></mesh>
         
-        <CameraManager mode={mode} />
+        {isVisible && <mesh><sphereGeometry args={[0.12, 32, 32]} /><meshBasicMaterial color={pinColor} /></mesh>}
+        {isVisible && <mesh rotation={[-Math.PI / 2, 0, 0]}><ringGeometry args={[0.3, 0.4, 32]} /><meshBasicMaterial color={pinColor} transparent opacity={hovered ? 0.6 : 0.2} /></mesh>}
+      </group>
+      {isVisible && <mesh position={[data.pos[0], data.pos[1] / 2, data.pos[2]]}><cylinderGeometry args={[0.005, 0.005, data.pos[1], 8]} /><meshBasicMaterial color="#6FA8C9" transparent opacity={0.3} /></mesh>}
+    </group>
+  )
+}
 
-        <BackgroundLayer />
-        <MemoryRing isActive={!!activePhoto}>
-        {photos.map((url, i) => {
-          const angle = (i / photos.length) * Math.PI * 2
-           const radius = 14 
-           const x = Math.cos(angle) * radius
-           const z = Math.sin(angle) * radius
-           const y = Math.sin(angle * 3) * 2.5
-           const rotY = -angle + Math.PI / 2 - Math.PI 
-           const uniqueName = `photo-${i}`
-           
-           return (
-             <CinematicPhoto 
-               key={uniqueName} 
-               name={uniqueName} 
-               url={url} 
-               position={[x, y, z]} 
-               rotation={[0, rotY, 0]} 
-               isActive={activePhoto?.name === uniqueName || activePhoto?.name === 'uploaded'}
-               mode={mode}
-               onClick={(e) => handlePhotoClick(e, url, uniqueName)}
-             />
-           )
-         })}
-      </MemoryRing>
-         
-         {activePhoto?.name === 'uploaded' && (
-             <CinematicPhoto 
-               key="uploaded"
-               name="uploaded"
-               url={activePhoto.url}
-               position={[0, 0, 0]} 
-               rotation={[0, 0, 0]}
-               isActive={true}
-               mode="focus"
-               onClick={() => {}}
-             />
-         )}
+function MemoryNodeOuterRing({ children, isFocusMode }: { children: React.ReactNode, isFocusMode: boolean }) {
+  const ringRef = useRef<THREE.Group>(null)
+  useFrame((_, delta) => { if (ringRef.current && !isFocusMode) ringRef.current.rotation.y -= delta * 0.02 }) 
+  return <group ref={ringRef}>{children}</group>
+}
 
-        <AvatarLayer />
+function CameraManager({ activeNode }: { activeNode: any }) {
+  const { camera, controls } = useThree()
+  useFrame((_, delta) => {
+    const orbit = controls as any
+    if (!orbit) return
+    if (activeNode) {
+      camera.position.lerp(new THREE.Vector3(0, 10, 18), 1.5 * delta)
+      orbit.target.lerp(new THREE.Vector3(0, 2, 0), 1.5 * delta)
+      orbit.enableRotate = false
+    } else {
+      camera.position.lerp(new THREE.Vector3(0, 20, 28), 1.0 * delta)
+      orbit.target.lerp(new THREE.Vector3(0, 0, 0), 1.0 * delta)
+      orbit.enableRotate = true
+    }
+    orbit.update()
+  })
+  return null
+}
 
-        <EffectComposer disableNormalPass>
-          <Bloom luminanceThreshold={0.7} mipmapBlur intensity={0.6} radius={0.4} />
-          <Noise opacity={0.1} />
-          <Vignette eskil={false} offset={0.1} darkness={1.2} />
-        </EffectComposer>
+// ================= 🔑 TouchDesigner 高流暢清透粒子影像組件 (已修復變數錯誤) 🔑 =================
 
-        <OrbitControls 
-            makeDefault 
-            enableZoom={false} 
-            enablePan={false}
-            maxPolarAngle={Math.PI / 1.8} 
-            minPolarAngle={Math.PI / 2.5} 
-            rotateSpeed={0.5}
-        />
+const TouchDesignerParticleImage = ({ src, onTranslated }: { src: string, onTranslated: () => void }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const animationRef = useRef<number | null>(null);
+  
+  const stateRef = useRef({
+    particles: [] as any[],
+    gatherProgress: 0,
+    startTime: Date.now(),
+    interactTime: null as number | null,
+    width: 0,
+    height: 0,
+  });
+
+  useEffect(() => {
+    let isMounted = true;
+    const img = new Image();
+    // 加上跨域允許，確保能讀取像素
+    img.crossOrigin = "Anonymous";
+    img.src = src;
+    img.onload = () => {
+      if (!isMounted) return;
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      const w = 550; 
+      const h = 330;
+      
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
+
+      stateRef.current.width = w * dpr;
+      stateRef.current.height = h * dpr;
+
+      const sampleCanvas = document.createElement('canvas');
+      const sampleCtx = sampleCanvas.getContext('2d', { willReadFrequently: true });
+      if (!sampleCtx) return;
+
+      const sampleW = 150;
+      const sampleH = Math.floor(150 * (img.height / img.width));
+      sampleCanvas.width = sampleW;
+      sampleCanvas.height = sampleH;
+      sampleCtx.drawImage(img, 0, 0, sampleW, sampleH);
+
+      // ★ 這裡就是之前引發空白崩潰的拼寫修復點
+      const imgData = sampleCtx.getImageData(0, 0, sampleW, sampleH).data;
+      const particles = [];
+
+      const scale = Math.min((w * dpr * 0.85) / sampleW, (h * dpr * 0.85) / sampleH);
+      const offsetX = (w * dpr - sampleW * scale) / 2;
+      const offsetY = (h * dpr - sampleH * scale) / 2;
+
+      for (let y = 0; y < sampleH; y++) {
+        for (let x = 0; x < sampleW; x++) {
+          const idx = (y * sampleW + x) * 4;
+          const r = imgData[idx];
+          const g = imgData[idx + 1]; // 這裡已修復
+          const b = imgData[idx + 2]; // 這裡已修復
+          
+          const brightness = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+
+          if (brightness < 0.78) {
+            const targetX = offsetX + x * scale;
+            const targetY = offsetY + y * scale;
+            
+            const angle = Math.random() * Math.PI * 2;
+            const dist = 20 + Math.random() * 40;
+            const initX = targetX + Math.cos(angle) * dist;
+            const initY = targetY + Math.sin(angle) * dist;
+
+            particles.push({
+              targetX, targetY, initX, initY,
+              brightness,
+              seed: Math.random() * 120,
+              size: (0.8 + (1.0 - brightness) * 1.5) * dpr, 
+              alpha: (1.0 - brightness) * 0.65, 
+            });
+          }
+        }
+      }
+
+      stateRef.current.particles = particles;
+      stateRef.current.gatherProgress = 0;
+      stateRef.current.startTime = Date.now();
+      stateRef.current.interactTime = null;
+
+      const renderLoop = () => {
+        const c = canvasRef.current;
+        if (!c) return;
+        const context = c.getContext('2d');
+        if (!context) return;
+
+        const { width, height, particles: pts, startTime: sTime, interactTime: iTime } = stateRef.current;
+        context.clearRect(0, 0, width, height); 
+
+        const elapsed = (Date.now() - sTime) / 1000;
+        
+        stateRef.current.gatherProgress = Math.min(stateRef.current.gatherProgress + 0.016, 1);
+        const gProgress = stateRef.current.gatherProgress;
+        const easeProgress = 1 - Math.pow(1 - gProgress, 3); 
+
+        let waveProgress = 0;
+        let waveActive = false;
+        if (iTime !== null) {
+          const timeSinceClick = (Date.now() - iTime) / 1000;
+          waveProgress = timeSinceClick / 1.0; 
+          if (waveProgress <= 1) waveActive = true;
+        }
+
+        for (let i = 0; i < pts.length; i++) {
+          const p = pts[i];
+
+          let cx = p.initX + (p.targetX - p.initX) * easeProgress;
+          let cy = p.initY + (p.targetY - p.initY) * easeProgress;
+
+          const driftSpeed = elapsed * 0.3 + p.seed;
+          const driftX = Math.sin(driftSpeed * 0.6 + cy * 0.005) * 2.5 * easeProgress;
+          const driftY = Math.cos(driftSpeed * 0.5 + cx * 0.005) * 2.0 * easeProgress;
+          cx += driftX;
+          cy += driftY;
+
+          if (waveActive) {
+            const dx = cx - width / 2;
+            const dy = cy - height / 2;
+            const distFromCenter = Math.sqrt(dx * dx + dy * dy);
+            
+            const rippleStart = waveProgress * (width * 0.7);
+            const rippleWidth = 70;
+            if (distFromCenter > rippleStart && distFromCenter < rippleStart + rippleWidth) {
+              const factor = (1.0 - (distFromCenter - rippleStart) / rippleWidth) * (1.0 - waveProgress);
+              cx += (dx / distFromCenter) * 12 * factor;
+              cy += (dy / distFromCenter) * 12 * factor;
+            }
+          }
+
+          context.beginPath();
+          context.arc(cx, cy, p.size * 0.5, 0, Math.PI * 2);
+          
+          if (p.brightness < 0.3) {
+            context.fillStyle = `rgba(30, 41, 59, ${p.alpha * easeProgress})`;
+          } else {
+            context.fillStyle = `rgba(95, 127, 153, ${p.alpha * easeProgress})`;
+          }
+          context.fill();
+        }
+
+        animationRef.current = requestAnimationFrame(renderLoop);
+      };
+
+      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+      animationRef.current = requestAnimationFrame(renderLoop);
+    };
+
+    return () => {
+      isMounted = false;
+      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+    };
+  }, [src]);
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (stateRef.current.interactTime !== null) return;
+    stateRef.current.interactTime = Date.now();
+    setTimeout(() => onTranslated(), 900);
+  };
+
+  return (
+    <canvas 
+      ref={canvasRef} 
+      onClick={handleClick}
+      style={{ display: 'block', margin: '0 auto', cursor: 'pointer', background: 'transparent' }}
+    />
+  );
+};
+
+// ================= 🏛️ 二段式沉浸 UI =================
+
+export default function Home() {
+  const [lang, setLang] = useState<'zh' | 'en'>('zh')
+  const [activeNode, setActiveNode] = useState<any | null>(null)
+  const [revealPhase, setRevealPhase] = useState<'memory' | 'design'>('memory')
+  
+  const config = SITE_CONFIG[lang]
+  const nodes = useMemo(() => GENERATE_LOCALIZED_DATA(), [])
+  const mode = activeNode ? 'focus' : 'gallery'
+
+  const handleSelectNode = (node: any) => {
+    setActiveNode(node)
+    setRevealPhase('memory')
+  }
+
+  const memoryPhotoSrc = activeNode ? PHOTO_URLS[activeNode.idx % 6] : ''
+
+  return (
+    <div style={{ width: '100vw', height: '100vh', background: '#F5F8FA', position: 'relative', overflow: 'hidden', fontFamily: '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif', WebkitUserSelect: 'none', userSelect: 'none' }}>
+      
+      <header style={{ position: 'absolute', top: 0, left: 0, width: '100%', padding: '40px 5vw', zIndex: 100, display: 'flex', justifyContent: 'space-between', pointerEvents: 'none' }}>
+        <div style={{ pointerEvents: 'auto', opacity: activeNode ? 0 : 1, transition: 'opacity 0.5s' }}>
+          <h1 style={{ margin: 0, fontSize: 'clamp(20px, 2.5vw, 24px)', fontWeight: 500, color: '#334155', letterSpacing: '4px' }}>{config.mainTitle}</h1>
+          <p style={{ margin: '8px 0 0 0', fontSize: 'clamp(11px, 1.2vw, 13px)', color: '#5F7F99', letterSpacing: '2px', textTransform: 'uppercase' }}>{config.subTitle}</p>
+        </div>
+      </header>
+
+      {/* 🎨 沉浸式敘事浮層 */}
+      {activeNode && (
+        <div style={{ position: 'absolute', inset: 0, zIndex: 110, background: 'radial-gradient(circle at center, rgba(245,248,250,0.5) 0%, rgba(245,248,250,0.98) 70%)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', animation: 'fadeInOverlay 1s ease forwards' }}>
+          <button onClick={() => setActiveNode(null)} style={{ position: 'absolute', top: '50px', left: '5vw', background: 'none', border: 'none', color: '#5F7F99', fontSize: '14px', cursor: 'pointer', letterSpacing: '2px', zIndex: 120 }}>
+            {config.backBtn}
+          </button>
+
+          {/* ================= 階段 1：高精密清透粒子藝術影像 ================= */}
+          {revealPhase === 'memory' && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', maxWidth: '800px', textAlign: 'center', animation: 'slowFadeIn 1.5s ease-out forwards' }}>
+              
+              <h3 style={{ fontSize: '24px', fontWeight: 300, color: '#5F7F99', letterSpacing: '8px', marginBottom: '40px', textShadow: '0 0 10px rgba(255,255,255,0.8)' }}>
+                {activeNode.entry}
+              </h3>
+              
+              {/* 粒子影像物理渲染區 */}
+              <div style={{ position: 'relative', width: '80%', height: '360px', marginBottom: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <TouchDesignerParticleImage 
+                  src={memoryPhotoSrc} 
+                  onTranslated={() => setRevealPhase('design')}
+                />
+              </div>
+
+              <p style={{ color: '#8DA5B7', fontSize: '15px', lineHeight: '2.2', letterSpacing: '1px', padding: '0 10%' }}>
+                {activeNode.pastMemory}
+              </p>
+              
+              <div style={{ marginTop: '50px', fontSize: '12px', color: '#6FA8C9', letterSpacing: '4px', animation: 'pulseText 2s infinite' }}>
+                [ {config.clickHint} ]
+              </div>
+            </div>
+          )}
+
+          {/* ================= 階段 2：空間装置重构 ================= */}
+          {revealPhase === 'design' && (
+            <div style={{ display: 'flex', width: '90%', maxWidth: '1110px', height: '75vh', alignItems: 'center', justifyContent: 'space-between', animation: 'shatterReveal 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards' }}>
+              
+              <div style={{ flex: '1', paddingRight: '60px', display: 'flex', flexDirection: 'column', gap: '40px' }}>
+                <div style={{ animation: 'staggerSlideUp 0.8s ease-out 0.1s both' }}>
+                  <h2 style={{ margin: '0 0 12px 0', fontSize: '48px', fontWeight: 300, color: '#334155', letterSpacing: '4px' }}>
+                    {activeNode.formalName}
+                  </h2>
+                  <div style={{ fontSize: '14px', color: '#8DA5B7', letterSpacing: '2px' }}>{activeNode.entry}</div>
+                </div>
+
+                <div style={{ position: 'relative', borderLeft: '1px solid rgba(111, 168, 201, 0.3)', paddingLeft: '24px', display: 'flex', flexDirection: 'column', gap: '30px' }}>
+                  <section style={{ animation: 'staggerSlideUp 0.8s ease-out 0.3s both' }}>
+                    <h4 style={{ margin: '0 0 8px 0', color: '#8DA5B7', fontSize: '12px', fontWeight: 400, letterSpacing: '1px' }}>{config.cardLabels.childBehavior}</h4>
+                    <p style={{ margin: 0, color: '#5F7F99', fontSize: '15px', lineHeight: '1.8' }}>{activeNode.childBehavior}</p>
+                  </section>
+                  <section style={{ paddingLeft: '20px', animation: 'staggerSlideUp 0.8s ease-out 0.4s both' }}>
+                    <h4 style={{ margin: '0 0 8px 0', color: '#8DA5B7', fontSize: '12px', fontWeight: 400, letterSpacing: '1px' }}>{config.cardLabels.spatialTranslation}</h4>
+                    <p style={{ margin: 0, color: '#334155', fontSize: '15px', lineHeight: '1.8', fontWeight: 500 }}>{activeNode.spatialTranslation}</p>
+                  </section>
+                  <section style={{ animation: 'staggerSlideUp 0.8s ease-out 0.5s both' }}>
+                    <h4 style={{ margin: '0 0 8px 0', color: '#6FA8C9', fontSize: '12px', fontWeight: 400, letterSpacing: '1px' }}>{config.cardLabels.interaction}</h4>
+                    <p style={{ margin: 0, color: '#5F7F99', fontSize: '15px', lineHeight: '1.8', background: 'rgba(255, 255, 255, 0.6)', padding: '16px 20px', borderRadius: '12px', border: '1px solid rgba(111,168,201,0.1)' }}>
+                      {activeNode.interaction}
+                    </p>
+                  </section>
+                </div>
+              </div>
+
+              <div style={{ flex: '1.2', height: '100%', position: 'relative', animation: 'staggerSlideUp 1.5s cubic-bezier(0.16, 1, 0.3, 1) 0.4s both' }}>
+                <img src={`/nodes/${activeNode.slug}.png`} alt={activeNode.formalName} style={{ width: '100%', height: '100%', objectFit: 'contain', filter: 'drop-shadow(0 30px 50px rgba(111,168,201,0.2))', animation: 'imageFloat 8s infinite ease-in-out' }} onError={(e) => { e.currentTarget.style.opacity='0' }} />
+              </div>
+
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 3D 社区主画布 */}
+      <Canvas dpr={[1, 2]} camera={{ position: [0, 20, 28], fov: 40 }}>
+        <Suspense fallback={<Html center><div style={{ color: '#6FA8C9' }}>載入空間記憶中...</div></Html>}>
+          <GlobalFogEnv />
+          <CommunityParticleTextCore isFocusMode={mode === 'focus'} />
+          <MemoryPhotoRing isFocusMode={mode === 'focus'} />
+          <MemoryNodeOuterRing isFocusMode={mode === 'focus'}>
+            {nodes.map((node) => (
+              <MemoryNode key={node.slug} data={node} isActive={activeNode?.slug === node.slug} isFocusMode={mode === 'focus'} onSelect={(e: any) => { e.stopPropagation(); handleSelectNode(node); }} />
+            ))}
+          </MemoryNodeOuterRing>
+          <CameraManager activeNode={activeNode} />
+        </Suspense>
+        <OrbitControls makeDefault enableZoom={true} enablePan={false} maxPolarAngle={Math.PI / 2.1} minPolarAngle={Math.PI / 6} rotateSpeed={0.3} />
+        <EffectComposer enableNormalPass={false}><Noise opacity={0.03} /></EffectComposer>
       </Canvas>
+
+      <style>{`
+        @keyframes fadeInOverlay { from { opacity: 0; backdrop-filter: blur(0px); } to { opacity: 1; backdrop-filter: blur(20px); } }
+        @keyframes slowFadeIn { from { opacity: 0; transform: scale(0.95); filter: blur(5px); } to { opacity: 1; transform: scale(1); filter: blur(0); } }
+        @keyframes pulseText { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+        @keyframes shatterReveal { 0% { opacity: 0; transform: scale(1.05) translateY(15px); filter: blur(10px); } 100% { opacity: 1; transform: scale(1) translateY(0); filter: blur(0); } }
+        @keyframes staggerSlideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes imageFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+        @keyframes particleDissolve { 0% { opacity: 0; filter: blur(8px); transform: translateY(10px); } 20%, 70% { opacity: 1; filter: blur(0px); transform: translateY(0); } 100% { opacity: 0; filter: blur(12px); transform: translateY(-15px); } }
+      `}</style>
     </div>
   )
 }

@@ -122,9 +122,9 @@ export function BlackHole() {
   return (
     <points ref={pointsRef} position={[0, 0, 0]} renderOrder={-2}>
       <bufferGeometry>
-        <bufferAttribute attach="attributes-position" count={particleCount} array={positions} itemSize={3} />
-        <bufferAttribute attach="attributes-scale" count={particleCount} array={scales} itemSize={1} />
-        <bufferAttribute attach="attributes-speed" count={particleCount} array={speeds} itemSize={1} />
+        <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+        <bufferAttribute attach="attributes-aScale" args={[scales, 1]} />
+        <bufferAttribute attach="attributes-aSpeed" args={[speeds, 1]} />
       </bufferGeometry>
       <shaderMaterial
         vertexShader={particleVertex}
