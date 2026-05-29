@@ -378,17 +378,9 @@ const TouchDesignerParticleImage = ({ src, onTranslated }: { src: string, onTran
 
         const elapsed = (Date.now() - sTime) / 1000;
         
-        stateRef.current.gatherProgress = Math.min(stateRef.current.gatherProgress + 0.016, 1);
+        stateRef.current.gatherProgress = Math.min(stateRef.current.gatherProgress + 0.03, 1);
         const gProgress = stateRef.current.gatherProgress;
         const easeProgress = 1 - Math.pow(1 - gProgress, 3); 
-
-        let waveProgress = 0;
-        let waveActive = false;
-        if (iTime !== null) {
-          const timeSinceClick = (Date.now() - iTime) / 1000;
-          waveProgress = timeSinceClick / 1.0; 
-          if (waveProgress <= 1) waveActive = true;
-        }
 
         for (let i = 0; i < pts.length; i++) {
           const p = pts[i];
@@ -401,20 +393,6 @@ const TouchDesignerParticleImage = ({ src, onTranslated }: { src: string, onTran
           const driftY = Math.cos(driftSpeed * 0.5 + cx * 0.005) * 0.6 * easeProgress;
           cx += driftX;
           cy += driftY;
-
-          if (waveActive) {
-            const dx = cx - width / 2;
-            const dy = cy - height / 2;
-            const distFromCenter = Math.sqrt(dx * dx + dy * dy);
-            
-            const rippleStart = waveProgress * (width * 0.7);
-            const rippleWidth = 70;
-            if (distFromCenter > rippleStart && distFromCenter < rippleStart + rippleWidth) {
-              const factor = (1.0 - (distFromCenter - rippleStart) / rippleWidth) * (1.0 - waveProgress);
-              cx += (dx / distFromCenter) * 12 * factor;
-              cy += (dy / distFromCenter) * 12 * factor;
-            }
-          }
 
           context.beginPath();
           context.arc(cx, cy, p.size * 0.5, 0, Math.PI * 2);
@@ -444,7 +422,7 @@ const TouchDesignerParticleImage = ({ src, onTranslated }: { src: string, onTran
     e.stopPropagation();
     if (stateRef.current.interactTime !== null) return;
     stateRef.current.interactTime = Date.now();
-    setTimeout(() => onTranslated(), 900);
+    setTimeout(() => onTranslated(), 600);
   };
 
   return (
