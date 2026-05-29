@@ -45,8 +45,8 @@ const SITE_CONFIG = {
     cardLabels: { pastMemory: '乡村记忆', childBehavior: '儿童行为', spatialTranslation: '空间转译', interaction: '互动体验' }
   },
   en: {
-    mainTitle: 'A Better Home',
-    subTitle: 'Local Childhood Landscape',
+    mainTitle: 'Better Home',
+    subTitle: 'Local Childhood Scape',
     langBtn: '中',
     backBtn: '← Exit',
     clickHint: 'Click to translate space',
@@ -163,15 +163,6 @@ function CommunityParticleTextCore({ isFocusMode }: { isFocusMode: boolean }) {
     </group>
   )
 }
-
-const FALLBACK_PHOTO_URLS = [
-  'https://jonas-1387333607.cos.ap-shanghai.myqcloud.com/photo1.png',
-  'https://jonas-1387333607.cos.ap-shanghai.myqcloud.com/photo2.png',
-  'https://jonas-1387333607.cos.ap-shanghai.myqcloud.com/photo3.png',
-  'https://jonas-1387333607.cos.ap-shanghai.myqcloud.com/photo4.png',
-  'https://jonas-1387333607.cos.ap-shanghai.myqcloud.com/photo5.png',
-  'https://jonas-1387333607.cos.ap-shanghai.myqcloud.com/photo6.png',
-]
 
 function MemoryPhotoRing({ isFocusMode, photoUrls }: { isFocusMode: boolean, photoUrls: string[] }) {
   const groupRef = useRef<THREE.Group>(null)
@@ -363,40 +354,31 @@ const TouchDesignerParticleImage = ({ src, onTranslated }: { src: string, onTran
       }
 
       stateRef.current.particles = particles;
-      stateRef.current.gatherProgress = 0;
+      stateRef.current.gatherProgress = 1; // 直接使用最終凝聚狀態
       stateRef.current.startTime = Date.now();
       stateRef.current.interactTime = null;
 
-      const renderLoop = () => {
+      // 僅渲染一次最終靜態粒子圖像
+      const renderStatic = () => {
         const c = canvasRef.current;
         if (!c) return;
         const context = c.getContext('2d');
         if (!context) return;
 
-        const { width, height, particles: pts, startTime: sTime, interactTime: iTime } = stateRef.current;
-        context.clearRect(0, 0, width, height); 
+        const { width, height, particles: pts } = stateRef.current;
+        context.clearRect(0, 0, width, height);
 
-        const elapsed = (Date.now() - sTime) / 1000;
-        
-        stateRef.current.gatherProgress = Math.min(stateRef.current.gatherProgress + 0.03, 1);
-        const gProgress = stateRef.current.gatherProgress;
-        const easeProgress = 1 - Math.pow(1 - gProgress, 3); 
+        const easeProgress = 1; // 完全凝聚
 
         for (let i = 0; i < pts.length; i++) {
           const p = pts[i];
 
-          let cx = p.initX + (p.targetX - p.initX) * easeProgress;
-          let cy = p.initY + (p.targetY - p.initY) * easeProgress;
-
-          const driftSpeed = elapsed * 0.3 + p.seed;
-          const driftX = Math.sin(driftSpeed * 0.6 + cy * 0.005) * 0.8 * easeProgress;
-          const driftY = Math.cos(driftSpeed * 0.5 + cx * 0.005) * 0.6 * easeProgress;
-          cx += driftX;
-          cy += driftY;
+          const cx = p.targetX;
+          const cy = p.targetY;
 
           context.beginPath();
           context.arc(cx, cy, p.size * 0.5, 0, Math.PI * 2);
-          
+
           if (p.brightness < 0.3) {
             context.fillStyle = `rgba(30, 41, 59, ${p.alpha * easeProgress})`;
           } else {
@@ -404,12 +386,9 @@ const TouchDesignerParticleImage = ({ src, onTranslated }: { src: string, onTran
           }
           context.fill();
         }
-
-        animationRef.current = requestAnimationFrame(renderLoop);
       };
 
-      if (animationRef.current) cancelAnimationFrame(animationRef.current);
-      animationRef.current = requestAnimationFrame(renderLoop);
+      renderStatic();
     };
 
     return () => {
@@ -440,8 +419,13 @@ export default function Home() {
   const [lang, setLang] = useState<'zh' | 'en'>('zh')
   const [activeNode, setActiveNode] = useState<any | null>(null)
   const [revealPhase, setRevealPhase] = useState<'memory' | 'design'>('memory')
-  const [photoUrls, setPhotoUrls] = useState<string[]>(FALLBACK_PHOTO_URLS)
+  const [photoUrls, setPhotoUrls] = useState<string[]>([])
+  const [photosLoaded, setPhotosLoaded] = useState(false)
   
+  const handleRevealDesign = () => {
+    setRevealPhase('design')
+  }
+
   const config = SITE_CONFIG[lang]
   const nodes = useMemo(() => GENERATE_LOCALIZED_DATA(), [])
   const mode = activeNode ? 'focus' : 'gallery'
@@ -462,10 +446,14 @@ export default function Home() {
     fetch('/api/photos')
       .then((response) => response.ok ? response.json() as Promise<{ urls?: string[] }> : null)
       .then((data) => {
-        if (isMounted && data?.urls?.length) setPhotoUrls(data.urls)
+        if (!isMounted) return
+        setPhotoUrls(data?.urls ?? [])
       })
       .catch(() => {
-        if (isMounted) setPhotoUrls(FALLBACK_PHOTO_URLS)
+        if (isMounted) setPhotoUrls([])
+      })
+      .finally(() => {
+        if (isMounted) setPhotosLoaded(true)
       })
 
     return () => {
@@ -478,7 +466,11 @@ export default function Home() {
     setRevealPhase('memory')
   }
 
-  const memoryPhotoSrc = activeNode ? photoUrls[activeNode.idx % photoUrls.length] : ''
+  const effectivePhotoUrls = photosLoaded ? photoUrls : []
+
+  const memoryPhotoSrc = activeNode && effectivePhotoUrls.length
+    ? effectivePhotoUrls[activeNode.idx % effectivePhotoUrls.length]
+    : ''
 
   return (
     <div style={{ width: '100vw', height: '100vh', background: '#F5F8FA', position: 'relative', overflow: 'hidden', fontFamily: '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif', WebkitUserSelect: 'none', userSelect: 'none' }}>
@@ -490,19 +482,20 @@ export default function Home() {
         style={{ display: 'none' }}
       />
 
-      <header style={{ position: 'absolute', top: 0, left: 0, width: '100%', padding: '40px 5vw', zIndex: 100, display: 'flex', justifyContent: 'space-between', pointerEvents: 'none' }}>
+      <header style={{ position: 'absolute', top: 0, left: 0, width: '100%', padding: '40px 5vw', zIndex: 100, display: 'flex', justifyContent: 'flex-start', pointerEvents: 'none' }}>
         <div style={{ pointerEvents: 'auto', opacity: activeNode ? 0 : 1, transition: 'opacity 0.5s' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <h1 style={{ margin: 0, fontSize: 'clamp(26px, 3.4vw, 40px)', fontWeight: 500, color: '#334155', letterSpacing: '4px' }}>
+            <h1 style={{ margin: 0, fontSize: 'clamp(26px, 3.4vw, 40px)', fontWeight: 500, color: '#334155', letterSpacing: '4px', textAlign: 'center', lineHeight: '1.0' }}>
               {SITE_CONFIG.zh.mainTitle}
-              <span style={{ marginLeft: '10px', fontSize: 'clamp(13px, 1.4vw, 18px)', fontWeight: 400, color: '#7C8CA0', letterSpacing: '1.5px' }}>
+              <br />
+              <span style={{ display: 'inline-block', marginTop: '-14px', fontSize: 'clamp(13px, 1.4vw, 18px)', fontWeight: 400, color: '#7C8CA0', letterSpacing: '1.5px' }}>
                 {SITE_CONFIG.en.mainTitle}
               </span>
             </h1>
-            <p style={{ margin: '6px 0 0 0', fontSize: 'clamp(14px, 2vw, 22px)', color: '#5F7F99', letterSpacing: '3px' }}>
+            <p style={{ margin: '6px 0 0 0', fontSize: 'clamp(14px, 2vw, 22px)', color: '#5F7F99', letterSpacing: '3px', textAlign: 'center' }}>
               {SITE_CONFIG.zh.subTitle}
             </p>
-            <p style={{ margin: '2px 0 0 0', fontSize: 'clamp(11px, 1.3vw, 15px)', color: '#7C8CA0', letterSpacing: '1.5px' }}>
+            <p style={{ margin: '2px 0 0 0', fontSize: 'clamp(11px, 1.3vw, 15px)', color: '#7C8CA0', letterSpacing: '1.5px', textAlign: 'center' }}>
               {SITE_CONFIG.en.subTitle}
             </p>
           </div>
@@ -511,8 +504,13 @@ export default function Home() {
 
       {/* 🎨 沉浸式敘事浮層 */}
       {activeNode && (
-        <div style={{ position: 'absolute', inset: 0, zIndex: 110, background: 'radial-gradient(circle at center, rgba(245,248,250,0.5) 0%, rgba(245,248,250,0.98) 70%)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', animation: 'fadeInOverlay 1s ease forwards' }}>
-          <button onClick={() => setActiveNode(null)} style={{ position: 'absolute', top: '50px', left: '5vw', background: 'none', border: 'none', color: '#5F7F99', fontSize: '14px', cursor: 'pointer', letterSpacing: '2px', zIndex: 120 }}>
+        <div
+          style={{ position: 'absolute', inset: 0, zIndex: 110, background: 'radial-gradient(circle at center, rgba(245,248,250,0.5) 0%, rgba(245,248,250,0.98) 70%)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', animation: 'fadeInOverlay 1s ease forwards' }}
+          onClick={() => {
+            if (revealPhase === 'memory') handleRevealDesign()
+          }}
+        >
+          <button onClick={(e) => { e.stopPropagation(); setActiveNode(null) }} style={{ position: 'absolute', top: '50px', left: '5vw', background: 'none', border: 'none', color: '#5F7F99', fontSize: '14px', cursor: 'pointer', letterSpacing: '2px', zIndex: 120 }}>
             {config.backBtn}
           </button>
 
@@ -586,7 +584,7 @@ export default function Home() {
               </div>
 
               <div style={{ flex: '1.2', height: '100%', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'staggerSlideUp 1.5s cubic-bezier(0.16, 1, 0.3, 1) 0.4s both' }}>
-                <img src={`/nodes/${activeNode.slug}.png`} alt={activeNode.formalName} style={{ width: 'auto', height: 'auto', maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', filter: 'drop-shadow(0 30px 50px rgba(111,168,201,0.2))', animation: 'imageFloat 8s infinite ease-in-out' }} onError={(e) => { e.currentTarget.style.opacity='0' }} />
+                <img src={`https://jonas-1387333607.cos.ap-shanghai.myqcloud.com/${activeNode.slug}.png`} alt={activeNode.formalName} style={{ width: 'auto', height: 'auto', maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', filter: 'drop-shadow(0 30px 50px rgba(111,168,201,0.2))', animation: 'imageFloat 8s infinite ease-in-out' }} onError={(e) => { e.currentTarget.style.opacity='0' }} />
               </div>
 
             </div>
@@ -599,7 +597,7 @@ export default function Home() {
         <Suspense fallback={<Html center><div style={{ color: '#6FA8C9' }}>載入空間記憶中...</div></Html>}>
           <GlobalFogEnv />
           <CommunityParticleTextCore isFocusMode={mode === 'focus'} />
-          <MemoryPhotoRing isFocusMode={mode === 'focus'} photoUrls={photoUrls} />
+          <MemoryPhotoRing isFocusMode={mode === 'focus'} photoUrls={effectivePhotoUrls} />
           <MemoryNodeOuterRing isFocusMode={mode === 'focus'}>
             {nodes.map((node) => (
               <MemoryNode key={node.slug} data={node} isActive={activeNode?.slug === node.slug} isFocusMode={mode === 'focus'} onSelect={(e: any) => { e.stopPropagation(); handleSelectNode(node); }} />
