@@ -6,6 +6,33 @@ import { EffectComposer, Noise } from '@react-three/postprocessing'
 import * as THREE from 'three'
 import React, { useRef, useState, useEffect, useMemo, Suspense } from 'react'
 
+function useTypewriter(text: string, speed: number = 40) {
+  const [displayed, setDisplayed] = useState('')
+
+  useEffect(() => {
+    if (!text) {
+      setDisplayed('')
+      return
+    }
+
+    setDisplayed('')
+    let index = 0
+    const interval = setInterval(() => {
+      index += 1
+      setDisplayed(text.slice(0, index))
+      if (index >= text.length) {
+        clearInterval(interval)
+      }
+    }, speed)
+
+    return () => {
+      clearInterval(interval)
+    }
+  }, [text, speed])
+
+  return displayed
+}
+
 // ================= 🌍 核心叙事数据 =================
 
 const SITE_CONFIG = {
@@ -28,15 +55,15 @@ const SITE_CONFIG = {
 }
 
 const NODES_DATA = [
-  { slug: "walk-by-river", entry: "沿着河边慢慢走", keywords: "蛙鸣 · 水边 · 停留", formalName: "亲水步台", pastMemory: "过去村落河边捉迷藏与观察蝌蚪的湿地经验，是孩子们天然的生态课堂。", childBehavior: "亲水、安全戏水、自然观察、结伴停留。", spatialTranslation: "设计安全的缓坡亲水阶梯栈道与低尺度网格防护，将自然水体引入社区。", interaction: "触碰NFC触发潺潺流溪声与水纹漫反射光影。" },
-  { slug: "tree-entrance", entry: "村口那棵树还在吗", keywords: "蝉鸣 · 聚集 · 纳凉", formalName: "树下议场", pastMemory: "大樟树是传统村落的社交核心，孩子们在巨大的树根间穿梭，听长辈讲古。", childBehavior: "非正式聚集、自发性游戏、登高眺望、倾听叙事。", spatialTranslation: "围绕乔木构建层叠、起伏的木质看台，创造情感连接的“议场”。", interaction: "触碰节点触发微风吹过树叶的沙沙声。" },
-  { slug: "path-behind-door", entry: "门后还有一条小路", keywords: "探索 · 穿行 · 隐秘", formalName: "穿行门", pastMemory: "江南传统村落错综复杂的窄巷与老木门，是探险与捉迷藏的天然迷宫。", childBehavior: "转角探索、捉迷藏、空间连续奔跑、感知光影。", spatialTranslation: "设计错落的微型几何圆孔穿行门洞群，重构街巷探索感。", interaction: "穿过门洞点亮线性投影光轨并伴随脚步声。" },
-  { slug: "only-we-know", entry: "只有我们知道", keywords: "雨声 · 躲藏 · 秘密", formalName: "秘密小屋", pastMemory: "村落中的秘密角落、自建小屋、堆放柴火的隐秘处，是专属的藏身空间。", childBehavior: "躲藏、停留、结伴、观察、私密倾诉。", spatialTranslation: "转化为社区中可进入、可停留、低天花板尺度的包裹式微空间。", interaction: "儿童触碰触发雨声、低声耳语或模拟的心跳声。" },
-  { slug: "stars-blink", entry: "听说星星会眨眼", keywords: "虫鸣 · 攀爬 · 远眺", formalName: "望星塔", pastMemory: "夏夜登高寻找北斗星的记忆，是乡村生活中关于垂直空间与星空的最初感知。", childBehavior: "攀爬、登高俯瞰、星空观测、空间发现。", spatialTranslation: "构建带有螺旋攀爬结构的轻量化塔形装置，设立垂直节点。", interaction: "登顶触碰点亮顶部微光，伴随夜间虫鸣。" },
-  { slug: "wind-turning", entry: "抬头听见风在转", keywords: "鸟鸣 · 律动 · 交换", formalName: "风巢标", pastMemory: "田间随风转动的风车与晾晒的谷物，带给孩子最直观的时间与季节感。", childBehavior: "动态观察、物物交换、风速感知、装置互动。", spatialTranslation: "设计带有动力感应装置的社区导视标志，将风能转化为律动。", interaction: "风车旋转时触发风铃声，可进行“物物交换”。" },
-  { slug: "beyond-wall", entry: "听见墙那边", keywords: "回声 · 倾听 · 回应", formalName: "回声井", pastMemory: "对着古井喊话、听墙那头的呼唤，声音的反射是乡村空间最奇妙的互动。", childBehavior: "发声、倾听、回声对话、角色扮演。", spatialTranslation: "设计带有声学反射弧面的微型半包裹墙体，创造自然回声收集器。", interaction: "通过传导装置，实现跨节点的实时声音对讲。" },
-  { slug: "my-yard", entry: "我家的院子", keywords: "篱笆 · 进出 ·家园", formalName: "院墙", pastMemory: "院子是家园的延伸，是篱笆、菜地、禽鸣与邻里隔墙打招呼的温情场域。", childBehavior: "穿行进出、驻足交谈、邻里窥探、家庭游戏。", spatialTranslation: "提取传统院墙的透空度与尺度，构建半透光的低矮景墙系统。", interaction: "走近区域触发家禽低鸣与炊烟的温暖氛围音。" },
-  { slug: "fish-scale", entry: "鱼鳞石上摆一摆", keywords: "江水 · 协作 · 摆放", formalName: "鱼鳞石台", pastMemory: "钱塘江边的鱼鳞石塘是天然的摆放台，孩子们在石头缝隙里寻找贝壳。", childBehavior: "摆放协作、自然物收集、手工创作、社交互助。", spatialTranslation: "复刻鱼鳞石的高低差，设计互动台面，鼓励自发的手工与交换。", interaction: "点击台面触发江水拍岸声与波光视觉效果。" }
+  { slug: "walk-by-river", entry: "沿着河边走", keywords: "蛙鸣 · 水边 · 停留", formalName: "亲水步台", pastMemory: "村落河边的湿地经验，是孩子们天然的生态课堂。", childBehavior: "亲水、戏水、自然观察、结伴", spatialTranslation: "缓坡亲水阶梯栈道，将社区内的水池空间激活。", interaction: "触碰NFC触发潺潺流溪声。" },
+  { slug: "tree-entrance", entry: "村口那棵树", keywords: "蝉鸣 · 聚集 · 纳凉", formalName: "树下议场", pastMemory: "大树是传统村落的社交核心，孩子们在巨大的树根间穿梭，听长辈讲古。", childBehavior: "自发性游戏、登高眺望、倾听叙事", spatialTranslation: "围绕乔木构建层叠、起伏的木质看台，创造情感连接的“议场”。", interaction: "触碰NFC节点触发微风吹过树叶的沙沙声。" },
+  { slug: "path-behind-door", entry: "门后还有一条小路", keywords: "探索 · 穿行 · 隐秘", formalName: "穿行门", pastMemory: "传统村落错综复杂的窄巷与老木门，是探险与捉迷藏的天然迷宫。", childBehavior: "转角探索、捉迷藏、空间连续奔跑", spatialTranslation: "设计错落的微型几何圆孔穿行门洞群，重构街巷探索感。", interaction: "触碰NFC节点触发别乡村犬吠的声音。" },
+  { slug: "only-we-know", entry: "只有我们知道", keywords: "雨声 · 躲藏 · 秘密", formalName: "秘密小屋", pastMemory: "村落中的秘密角落、自建小屋、堆放柴火的隐秘处，是专属的藏身空间。", childBehavior: "躲藏、停留、阅读、私密倾诉", spatialTranslation: "转化为社区中可进入、可停留包裹式微空间。", interaction: "NFC可触发儿童听见雨声，治愈的天然的白噪音。" },
+  { slug: "stars-blink", entry: "听说星星会眨眼", keywords: "虫鸣 · 攀爬 · 远眺", formalName: "望星塔", pastMemory: "夏夜登高寻找北斗星的记忆，是乡村生活中关于垂直空间与星空的最初感知。", childBehavior: "攀爬、登高俯瞰、星空观测、空间发现。", spatialTranslation: "构建带有螺旋攀爬结构的轻量化塔形装置，设立垂直节点。", interaction: "登顶触碰NFC会伴随夜间虫鸣。" },
+  { slug: "wind-turning", entry: "抬头听见风在转", keywords: "鸟鸣 · 律动 · 交换", formalName: "风巢标", pastMemory: "田间随风转动的风车与晾晒的谷物，带给孩子最直观的时间与季节感。", childBehavior: "动态观察、物物交换、装置互动", spatialTranslation: "设计带有动力感应装置的社区导视标志，将风能转化为律动。", interaction: "NFC触发触发鸟鸣。" },
+  { slug: "beyond-wall", entry: "听见墙那边", keywords: "回声 · 倾听 · 回应", formalName: "回声墙", pastMemory: "对着墙喊话、听墙那头的呼唤，声音的反射是乡村空间最奇妙的互动。", childBehavior: "发声、倾听、回声对话、角色扮演", spatialTranslation: "设计传导装置，实现跨节点的实时声音对讲。", interaction: "儿童之间的声音。" },
+  { slug: "my-yard", entry: "我家的院子", keywords: "篱笆 · 进出 · 家园", formalName: "院墙", pastMemory: "院子是家园的延伸，是篱笆、菜地、禽鸣与邻里隔墙打招呼的温情场域。", childBehavior: "穿行进出、驻足交谈、家庭游戏。", spatialTranslation: "提取传统院墙的透空度与尺度，构建半透光的低矮景墙系统。", interaction: "走近NFC区域触发家禽低鸣的氛围。" },
+  { slug: "fish-scale", entry: "鱼鳞石上摆一摆", keywords: "江水 · 协作 · 摆放", formalName: "鱼鳞石台", pastMemory: "钱塘江边的鱼鳞石塘是天然的摆放台，孩子们在石头缝隙里寻找贝壳。", childBehavior: "摆放协作、自然物收集、手工创作、社交互助", spatialTranslation: "复刻鱼鳞石塘的高低差台面，设计互动台面，鼓励自发的手工区域。", interaction: "点击台面NFC触发江水拍岸声。" }
 ];
 
 const GENERATE_LOCALIZED_DATA = () => {
@@ -441,6 +468,16 @@ export default function Home() {
   const nodes = useMemo(() => GENERATE_LOCALIZED_DATA(), [])
   const mode = activeNode ? 'focus' : 'gallery'
 
+  const pastMemoryKey = activeNode ? `${activeNode.slug}-past-${revealPhase}` : ''
+  const designChildKey = activeNode ? `${activeNode.slug}-child-${revealPhase}` : ''
+  const designSpatialKey = activeNode ? `${activeNode.slug}-spatial-${revealPhase}` : ''
+  const designInteractKey = activeNode ? `${activeNode.slug}-interact-${revealPhase}` : ''
+
+  const typedPastMemory = useTypewriter(revealPhase === 'memory' && activeNode ? activeNode.pastMemory : '', 35)
+  const typedChildBehavior = useTypewriter(revealPhase === 'design' && activeNode ? activeNode.childBehavior : '', 35)
+  const typedSpatialTranslation = useTypewriter(revealPhase === 'design' && activeNode ? activeNode.spatialTranslation : '', 35)
+  const typedInteraction = useTypewriter(revealPhase === 'design' && activeNode ? activeNode.interaction : '', 35)
+
   useEffect(() => {
     let isMounted = true
 
@@ -470,8 +507,20 @@ export default function Home() {
       
       <header style={{ position: 'absolute', top: 0, left: 0, width: '100%', padding: '40px 5vw', zIndex: 100, display: 'flex', justifyContent: 'space-between', pointerEvents: 'none' }}>
         <div style={{ pointerEvents: 'auto', opacity: activeNode ? 0 : 1, transition: 'opacity 0.5s' }}>
-          <h1 style={{ margin: 0, fontSize: 'clamp(20px, 2.5vw, 24px)', fontWeight: 500, color: '#334155', letterSpacing: '4px' }}>{config.mainTitle}</h1>
-          <p style={{ margin: '8px 0 0 0', fontSize: 'clamp(11px, 1.2vw, 13px)', color: '#5F7F99', letterSpacing: '2px', textTransform: 'uppercase' }}>{config.subTitle}</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <h1 style={{ margin: 0, fontSize: 'clamp(26px, 3.4vw, 40px)', fontWeight: 500, color: '#334155', letterSpacing: '4px' }}>
+              {SITE_CONFIG.zh.mainTitle}
+              <span style={{ marginLeft: '10px', fontSize: 'clamp(13px, 1.4vw, 18px)', fontWeight: 400, color: '#7C8CA0', letterSpacing: '1.5px' }}>
+                {SITE_CONFIG.en.mainTitle}
+              </span>
+            </h1>
+            <p style={{ margin: '6px 0 0 0', fontSize: 'clamp(14px, 2vw, 22px)', color: '#5F7F99', letterSpacing: '3px' }}>
+              {SITE_CONFIG.zh.subTitle}
+            </p>
+            <p style={{ margin: '2px 0 0 0', fontSize: 'clamp(11px, 1.3vw, 15px)', color: '#7C8CA0', letterSpacing: '1.5px' }}>
+              {SITE_CONFIG.en.subTitle}
+            </p>
+          </div>
         </div>
       </header>
 
@@ -499,11 +548,24 @@ export default function Home() {
               </div>
 
               <p style={{ color: '#8DA5B7', fontSize: '15px', lineHeight: '2.2', letterSpacing: '1px', padding: '0 10%' }}>
-                {activeNode.pastMemory}
+                {typedPastMemory}
               </p>
               
-              <div style={{ marginTop: '50px', fontSize: '12px', color: '#6FA8C9', letterSpacing: '4px', animation: 'pulseText 2s infinite' }}>
-                [ {config.clickHint} ]
+              <div style={{ marginTop: '42px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
+                <div
+                  style={{
+                    width: '42px',
+                    height: '42px',
+                    borderRadius: '999px',
+                    border: '1.5px solid rgba(255,255,255,0.9)',
+                    boxShadow: '0 0 0 0 rgba(255,255,255,0.8)',
+                    animation: 'breathingRing 2.4s ease-out infinite',
+                    background: 'radial-gradient(circle at center, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0) 60%)',
+                  }}
+                />
+                <div style={{ fontSize: '12px', color: '#6FA8C9', letterSpacing: '4px', animation: 'pulseText 2s infinite' }}>
+                  [ {config.clickHint} ]
+                </div>
               </div>
             </div>
           )}
@@ -522,17 +584,17 @@ export default function Home() {
 
                 <div style={{ position: 'relative', borderLeft: '1px solid rgba(111, 168, 201, 0.3)', paddingLeft: '24px', display: 'flex', flexDirection: 'column', gap: '30px' }}>
                   <section style={{ animation: 'staggerSlideUp 0.8s ease-out 0.3s both' }}>
-                    <h4 style={{ margin: '0 0 8px 0', color: '#8DA5B7', fontSize: '12px', fontWeight: 400, letterSpacing: '1px' }}>{config.cardLabels.childBehavior}</h4>
-                    <p style={{ margin: 0, color: '#5F7F99', fontSize: '15px', lineHeight: '1.8' }}>{activeNode.childBehavior}</p>
+                    <h4 style={{ margin: '0 0 8px 0', color: '#8DA5B7', fontSize: '12px', fontWeight: 600, letterSpacing: '1px' }}>{config.cardLabels.childBehavior}</h4>
+                    <p style={{ margin: 0, color: '#5F7F99', fontSize: '15px', lineHeight: '1.8' }}>{typedChildBehavior}</p>
                   </section>
                   <section style={{ animation: 'staggerSlideUp 0.8s ease-out 0.4s both' }}>
-                    <h4 style={{ margin: '0 0 8px 0', color: '#8DA5B7', fontSize: '12px', fontWeight: 400, letterSpacing: '1px' }}>{config.cardLabels.spatialTranslation}</h4>
-                    <p style={{ margin: 0, color: '#334155', fontSize: '15px', lineHeight: '1.8', fontWeight: 500 }}>{activeNode.spatialTranslation}</p>
+                    <h4 style={{ margin: '0 0 8px 0', color: '#8DA5B7', fontSize: '12px', fontWeight: 600, letterSpacing: '1px' }}>{config.cardLabels.spatialTranslation}</h4>
+                    <p style={{ margin: 0, color: '#5F7F99', fontSize: '15px', lineHeight: '1.8' }}>{typedSpatialTranslation}</p>
                   </section>
                   <section style={{ animation: 'staggerSlideUp 0.8s ease-out 0.5s both' }}>
-                    <h4 style={{ margin: '0 0 8px 0', color: '#6FA8C9', fontSize: '12px', fontWeight: 400, letterSpacing: '1px' }}>{config.cardLabels.interaction}</h4>
+                    <h4 style={{ margin: '0 0 8px 0', color: '#6FA8C9', fontSize: '12px', fontWeight: 600, letterSpacing: '1px' }}>{config.cardLabels.interaction}</h4>
                     <p style={{ margin: 0, color: '#5F7F99', fontSize: '15px', lineHeight: '1.8' }}>
-                      {activeNode.interaction}
+                      {typedInteraction}
                     </p>
                   </section>
                 </div>
@@ -572,6 +634,11 @@ export default function Home() {
         @keyframes staggerSlideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes imageFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
         @keyframes particleDissolve { 0% { opacity: 0; filter: blur(8px); transform: translateY(10px); } 20%, 70% { opacity: 1; filter: blur(0px); transform: translateY(0); } 100% { opacity: 0; filter: blur(12px); transform: translateY(-15px); } }
+        @keyframes breathingRing {
+          0% { box-shadow: 0 0 0 0 rgba(255,255,255,0.8); opacity: 0.7; }
+          50% { box-shadow: 0 0 0 14px rgba(255,255,255,0); opacity: 1; }
+          100% { box-shadow: 0 0 0 0 rgba(255,255,255,0); opacity: 0.7; }
+        }
       `}</style>
     </div>
   )
