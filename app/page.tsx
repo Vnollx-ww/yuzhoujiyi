@@ -63,6 +63,29 @@ function GlobalFogEnv() {
 }
 
 const CORE_COMMUNITIES = ["柏联社区", "象山社区", "狮子社区", "贤家庄社区", "龙心社区", "龙王沙社区"]
+const MAIN_CLUSTER_SCALE = 1.35
+const COMMUNITY_TEXT_Y_OFFSETS = [0.22, 0.28, 0.12, -0.1, -0.28, -0.22]
+
+function FloatingCommunityLabel({ name, index, position }: { name: string, index: number, position: [number, number, number] }) {
+  const labelRef = useRef<THREE.Group>(null)
+
+  useFrame((state) => {
+    if (labelRef.current) {
+      const time = state.clock.getElapsedTime()
+      labelRef.current.position.y = position[1] + Math.sin(time * (0.55 + index * 0.06) + index * 1.25) * 0.18 * MAIN_CLUSTER_SCALE
+    }
+  })
+
+  return (
+    <group ref={labelRef} position={position}>
+      <Html center style={{ pointerEvents: 'none' }}>
+        <div style={{ color: "#5F7F99", fontSize: `${15 * MAIN_CLUSTER_SCALE}px`, fontWeight: 400, letterSpacing: `${4 * MAIN_CLUSTER_SCALE}px`, whiteSpace: 'nowrap', textShadow: '0 0 10px rgba(255,255,255,0.8)', animation: `particleDissolve 8s infinite ease-in-out ${index * 0.5}s` }}>
+          {name}
+        </div>
+      </Html>
+    </group>
+  )
+}
 
 function CommunityParticleTextCore({ isFocusMode }: { isFocusMode: boolean }) {
   const pointsRef = useRef<THREE.Points>(null)
@@ -73,9 +96,9 @@ function CommunityParticleTextCore({ isFocusMode }: { isFocusMode: boolean }) {
     const arr = new Float32Array(count * 3)
     for(let i=0; i<count; i++) {
       const angle = Math.random() * Math.PI * 2
-      const radius = Math.random() * 4
+      const radius = Math.random() * 4 * MAIN_CLUSTER_SCALE
       arr[i*3] = Math.cos(angle) * radius
-      arr[i*3+1] = (Math.random() - 0.5) * 4
+      arr[i*3+1] = (Math.random() - 0.5) * 4 * MAIN_CLUSTER_SCALE
       arr[i*3+2] = Math.sin(angle) * radius
     }
     const g = new THREE.BufferGeometry()
@@ -93,32 +116,28 @@ function CommunityParticleTextCore({ isFocusMode }: { isFocusMode: boolean }) {
       }
       pointsRef.current.geometry.attributes.position.needsUpdate = true
     }
-    if (textGroupRef.current) textGroupRef.current.position.y = 1.5 + Math.sin(time * 0.6) * 0.3
+    if (textGroupRef.current) textGroupRef.current.position.y = 1.5 * MAIN_CLUSTER_SCALE + Math.sin(time * 0.6) * 0.3 * MAIN_CLUSTER_SCALE
   })
 
   return (
     <group position={[0, 0, 0]}>
-      <points ref={pointsRef} geometry={geo} position={[0, 1.5, 0]} visible={!isFocusMode}>
-        <pointsMaterial size={0.12} color="#A6C2D6" transparent opacity={0.4} sizeAttenuation depthWrite={false} blending={THREE.AdditiveBlending} />
+      <points ref={pointsRef} geometry={geo} position={[0, 1.5 * MAIN_CLUSTER_SCALE, 0]} visible={!isFocusMode}>
+        <pointsMaterial size={0.12 * MAIN_CLUSTER_SCALE} color="#A6C2D6" transparent opacity={0.4} sizeAttenuation depthWrite={false} blending={THREE.AdditiveBlending} />
       </points>
       <group ref={textGroupRef}>
         {!isFocusMode && CORE_COMMUNITIES.map((name, index) => {
           const col = index % 3
           const row = Math.floor(index / 3)
-          return (
-            <Html key={name} center position={[(col - 1) * 2.8, (0.5 - row) * 1.0, 0]} style={{ pointerEvents: 'none' }}>
-              <div style={{ color: "#5F7F99", fontSize: '15px', fontWeight: 400, letterSpacing: '4px', whiteSpace: 'nowrap', textShadow: '0 0 10px rgba(255,255,255,0.8)', animation: `particleDissolve 8s infinite ease-in-out ${index * 0.5}s` }}>
-                {name}
-              </div>
-            </Html>
-          )
+          const yOffset = COMMUNITY_TEXT_Y_OFFSETS[index] * MAIN_CLUSTER_SCALE
+          const position: [number, number, number] = [(col - 1) * 2.8 * MAIN_CLUSTER_SCALE, (0.5 - row) * 1.0 * MAIN_CLUSTER_SCALE + yOffset, 0]
+          return <FloatingCommunityLabel key={name} name={name} index={index} position={position} />
         })}
       </group>
     </group>
   )
 }
 
-const PHOTO_URLS = [
+const FALLBACK_PHOTO_URLS = [
   'https://jonas-1387333607.cos.ap-shanghai.myqcloud.com/photo1.png',
   'https://jonas-1387333607.cos.ap-shanghai.myqcloud.com/photo2.png',
   'https://jonas-1387333607.cos.ap-shanghai.myqcloud.com/photo3.png',
@@ -127,22 +146,22 @@ const PHOTO_URLS = [
   'https://jonas-1387333607.cos.ap-shanghai.myqcloud.com/photo6.png',
 ]
 
-function MemoryPhotoRing({ isFocusMode }: { isFocusMode: boolean }) {
+function MemoryPhotoRing({ isFocusMode, photoUrls }: { isFocusMode: boolean, photoUrls: string[] }) {
   const groupRef = useRef<THREE.Group>(null)
-  const textures = useLoader(THREE.TextureLoader, PHOTO_URLS, undefined, () => console.warn('Photo skip'))
+  const textures = useLoader(THREE.TextureLoader, photoUrls, undefined, () => console.warn('Photo skip'))
   
   const photoMeshes = useMemo(() => {
     const meshes = []
-    for (let i = 0; i < 6; i++) {
-      const angle = (i / 6) * Math.PI * 2
-      meshes.push({ position: [Math.cos(angle) * 6.5, 0, Math.sin(angle) * 6.5], rotation: [0, -angle + Math.PI / 2, 0] })
+    for (let i = 0; i < photoUrls.length; i++) {
+      const angle = (i / photoUrls.length) * Math.PI * 2
+      meshes.push({ position: [Math.cos(angle) * 6.5 * MAIN_CLUSTER_SCALE, 0, Math.sin(angle) * 6.5 * MAIN_CLUSTER_SCALE], rotation: [0, -angle + Math.PI / 2, 0] })
     }
     return meshes
-  }, [])
+  }, [photoUrls.length])
 
   useFrame((state, delta) => {
     if (groupRef.current) {
-      groupRef.current.position.y = 1.8 + Math.sin(state.clock.getElapsedTime() * 0.5) * 0.2
+      groupRef.current.position.y = 1.8 * MAIN_CLUSTER_SCALE + Math.sin(state.clock.getElapsedTime() * 0.5) * 0.2 * MAIN_CLUSTER_SCALE
       if (!isFocusMode) groupRef.current.rotation.y += delta * 0.04 
     }
   })
@@ -151,7 +170,7 @@ function MemoryPhotoRing({ isFocusMode }: { isFocusMode: boolean }) {
     <group ref={groupRef} visible={!isFocusMode}>
       {photoMeshes.map((m, i) => (
         <mesh key={i} position={m.position as any} rotation={m.rotation as any}>
-          <planeGeometry args={[2.2, 1.4]} />
+          <planeGeometry args={[2.2 * MAIN_CLUSTER_SCALE, 1.4 * MAIN_CLUSTER_SCALE]} />
           {textures[i] ? <meshBasicMaterial map={textures[i]} transparent opacity={0.65} side={THREE.DoubleSide} /> : <meshBasicMaterial color="#A6C2D6" transparent opacity={0.3} side={THREE.DoubleSide} />}
         </mesh>
       ))}
@@ -260,7 +279,7 @@ const TouchDesignerParticleImage = ({ src, onTranslated }: { src: string, onTran
       const w = 550; 
       const h = 330;
       
-      const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+      const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
       canvas.width = w * dpr;
       canvas.height = h * dpr;
       canvas.style.width = `${w}px`;
@@ -273,8 +292,8 @@ const TouchDesignerParticleImage = ({ src, onTranslated }: { src: string, onTran
       const sampleCtx = sampleCanvas.getContext('2d', { willReadFrequently: true });
       if (!sampleCtx) return;
 
-      const sampleW = 150;
-      const sampleH = Math.floor(150 * (img.height / img.width));
+      const sampleW = 280;
+      const sampleH = Math.floor(sampleW * (img.height / img.width));
       sampleCanvas.width = sampleW;
       sampleCanvas.height = sampleH;
       sampleCtx.drawImage(img, 0, 0, sampleW, sampleH);
@@ -310,7 +329,7 @@ const TouchDesignerParticleImage = ({ src, onTranslated }: { src: string, onTran
               brightness,
               seed: Math.random() * 120,
               size: (0.8 + (1.0 - brightness) * 1.5) * dpr, 
-              alpha: (1.0 - brightness) * 0.65, 
+              alpha: (1.0 - brightness) * 0.85, 
             });
           }
         }
@@ -351,8 +370,8 @@ const TouchDesignerParticleImage = ({ src, onTranslated }: { src: string, onTran
           let cy = p.initY + (p.targetY - p.initY) * easeProgress;
 
           const driftSpeed = elapsed * 0.3 + p.seed;
-          const driftX = Math.sin(driftSpeed * 0.6 + cy * 0.005) * 2.5 * easeProgress;
-          const driftY = Math.cos(driftSpeed * 0.5 + cx * 0.005) * 2.0 * easeProgress;
+          const driftX = Math.sin(driftSpeed * 0.6 + cy * 0.005) * 0.8 * easeProgress;
+          const driftY = Math.cos(driftSpeed * 0.5 + cx * 0.005) * 0.6 * easeProgress;
           cx += driftX;
           cy += driftY;
 
@@ -416,17 +435,35 @@ export default function Home() {
   const [lang, setLang] = useState<'zh' | 'en'>('zh')
   const [activeNode, setActiveNode] = useState<any | null>(null)
   const [revealPhase, setRevealPhase] = useState<'memory' | 'design'>('memory')
+  const [photoUrls, setPhotoUrls] = useState<string[]>(FALLBACK_PHOTO_URLS)
   
   const config = SITE_CONFIG[lang]
   const nodes = useMemo(() => GENERATE_LOCALIZED_DATA(), [])
   const mode = activeNode ? 'focus' : 'gallery'
+
+  useEffect(() => {
+    let isMounted = true
+
+    fetch('/api/photos')
+      .then((response) => response.ok ? response.json() as Promise<{ urls?: string[] }> : null)
+      .then((data) => {
+        if (isMounted && data?.urls?.length) setPhotoUrls(data.urls)
+      })
+      .catch(() => {
+        if (isMounted) setPhotoUrls(FALLBACK_PHOTO_URLS)
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
 
   const handleSelectNode = (node: any) => {
     setActiveNode(node)
     setRevealPhase('memory')
   }
 
-  const memoryPhotoSrc = activeNode ? PHOTO_URLS[activeNode.idx % 6] : ''
+  const memoryPhotoSrc = activeNode ? photoUrls[activeNode.idx % photoUrls.length] : ''
 
   return (
     <div style={{ width: '100vw', height: '100vh', background: '#F5F8FA', position: 'relative', overflow: 'hidden', fontFamily: '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif', WebkitUserSelect: 'none', userSelect: 'none' }}>
@@ -488,21 +525,21 @@ export default function Home() {
                     <h4 style={{ margin: '0 0 8px 0', color: '#8DA5B7', fontSize: '12px', fontWeight: 400, letterSpacing: '1px' }}>{config.cardLabels.childBehavior}</h4>
                     <p style={{ margin: 0, color: '#5F7F99', fontSize: '15px', lineHeight: '1.8' }}>{activeNode.childBehavior}</p>
                   </section>
-                  <section style={{ paddingLeft: '20px', animation: 'staggerSlideUp 0.8s ease-out 0.4s both' }}>
+                  <section style={{ animation: 'staggerSlideUp 0.8s ease-out 0.4s both' }}>
                     <h4 style={{ margin: '0 0 8px 0', color: '#8DA5B7', fontSize: '12px', fontWeight: 400, letterSpacing: '1px' }}>{config.cardLabels.spatialTranslation}</h4>
                     <p style={{ margin: 0, color: '#334155', fontSize: '15px', lineHeight: '1.8', fontWeight: 500 }}>{activeNode.spatialTranslation}</p>
                   </section>
                   <section style={{ animation: 'staggerSlideUp 0.8s ease-out 0.5s both' }}>
                     <h4 style={{ margin: '0 0 8px 0', color: '#6FA8C9', fontSize: '12px', fontWeight: 400, letterSpacing: '1px' }}>{config.cardLabels.interaction}</h4>
-                    <p style={{ margin: 0, color: '#5F7F99', fontSize: '15px', lineHeight: '1.8', background: 'rgba(255, 255, 255, 0.6)', padding: '16px 20px', borderRadius: '12px', border: '1px solid rgba(111,168,201,0.1)' }}>
+                    <p style={{ margin: 0, color: '#5F7F99', fontSize: '15px', lineHeight: '1.8' }}>
                       {activeNode.interaction}
                     </p>
                   </section>
                 </div>
               </div>
 
-              <div style={{ flex: '1.2', height: '100%', position: 'relative', animation: 'staggerSlideUp 1.5s cubic-bezier(0.16, 1, 0.3, 1) 0.4s both' }}>
-                <img src={`/nodes/${activeNode.slug}.png`} alt={activeNode.formalName} style={{ width: '100%', height: '100%', objectFit: 'contain', filter: 'drop-shadow(0 30px 50px rgba(111,168,201,0.2))', animation: 'imageFloat 8s infinite ease-in-out' }} onError={(e) => { e.currentTarget.style.opacity='0' }} />
+              <div style={{ flex: '1.2', height: '100%', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'staggerSlideUp 1.5s cubic-bezier(0.16, 1, 0.3, 1) 0.4s both' }}>
+                <img src={`/nodes/${activeNode.slug}.png`} alt={activeNode.formalName} style={{ width: 'auto', height: 'auto', maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', filter: 'drop-shadow(0 30px 50px rgba(111,168,201,0.2))', animation: 'imageFloat 8s infinite ease-in-out' }} onError={(e) => { e.currentTarget.style.opacity='0' }} />
               </div>
 
             </div>
@@ -515,7 +552,7 @@ export default function Home() {
         <Suspense fallback={<Html center><div style={{ color: '#6FA8C9' }}>載入空間記憶中...</div></Html>}>
           <GlobalFogEnv />
           <CommunityParticleTextCore isFocusMode={mode === 'focus'} />
-          <MemoryPhotoRing isFocusMode={mode === 'focus'} />
+          <MemoryPhotoRing isFocusMode={mode === 'focus'} photoUrls={photoUrls} />
           <MemoryNodeOuterRing isFocusMode={mode === 'focus'}>
             {nodes.map((node) => (
               <MemoryNode key={node.slug} data={node} isActive={activeNode?.slug === node.slug} isFocusMode={mode === 'focus'} onSelect={(e: any) => { e.stopPropagation(); handleSelectNode(node); }} />
