@@ -505,6 +505,13 @@ export default function Home() {
   return (
     <div style={{ width: '100vw', height: '100vh', background: '#F5F8FA', position: 'relative', overflow: 'hidden', fontFamily: '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif', WebkitUserSelect: 'none', userSelect: 'none' }}>
       
+      <audio
+        src="https://jonas-1387333607.cos.ap-shanghai.myqcloud.com/snowfall.mp3"
+        autoPlay
+        loop
+        style={{ display: 'none' }}
+      />
+
       <header style={{ position: 'absolute', top: 0, left: 0, width: '100%', padding: '40px 5vw', zIndex: 100, display: 'flex', justifyContent: 'space-between', pointerEvents: 'none' }}>
         <div style={{ pointerEvents: 'auto', opacity: activeNode ? 0 : 1, transition: 'opacity 0.5s' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
